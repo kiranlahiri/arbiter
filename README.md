@@ -11,6 +11,7 @@ Right now, this repository contains the early foundation for that pipeline:
 - Protobuf schemas for raw ticks, normalized ticks, and arbitrage signals
 - Generated Go bindings for those schemas
 - A local Kafka development stack using Docker Compose
+- A Coinbase WebSocket ingestor that publishes `RawTick` messages to Kafka
 - Example Go producer and consumer apps that exchange `NormalizedTick` messages
 - Local developer docs and Make targets for common workflows
 
@@ -22,6 +23,7 @@ Implemented:
 
 - Kafka + Schema Registry local stack
 - Protobuf message contracts
+- Coinbase ticker-feed ingestor for one product
 - Example producer/consumer path
 - Environment-based Kafka broker configuration
 
@@ -58,6 +60,7 @@ Planned later:
 ```text
 cmd/
   consumer/     Example Kafka consumer for NormalizedTick messages
+  ingestor-coinbase/ Coinbase WebSocket ingestor publishing RawTick messages
   producer/     Example Kafka producer for NormalizedTick messages
 docs/
   local_kafka_reference.md
@@ -95,7 +98,15 @@ make gen-protos
 
 This requires `protoc` and `protoc-gen-go`.
 
-### 3. Run the example consumer and producer
+### 3. Create the local Kafka topics
+
+```bash
+make create-topics-dev
+```
+
+### 4. Run the example consumer and producer
+
+The Compose-network path is the recommended dev workflow.
 
 Inside the Compose network:
 
@@ -111,6 +122,29 @@ go run ./cmd/consumer
 go run ./cmd/producer
 ```
 
+### 5. Run the Coinbase ingestor
+
+The Compose-network path is the recommended dev workflow.
+
+Inside the Compose network:
+
+```bash
+make compose-run-ingestor-coinbase
+```
+
+Or directly on your host if your local Kafka listener setup matches the host-run configuration:
+
+```bash
+go run ./cmd/ingestor-coinbase
+```
+
+Useful environment variables:
+
+- `KAFKA_BROKERS` default: `localhost:9092`
+- `RAW_TICKS_TOPIC` default: `raw.ticks.coinbase`
+- `COINBASE_PRODUCT_ID` default: `BTC-USD`
+- `COINBASE_WS_URL` default: `wss://ws-feed.exchange.coinbase.com`
+
 The sample apps use `KAFKA_BROKERS` when set.
 
 - Host default: `localhost:9092`
@@ -121,12 +155,14 @@ The sample apps use `KAFKA_BROKERS` when set.
 ```bash
 make up
 make up-minimal
+make create-topics-dev
 make down
 make logs
 make logs-follow
 make gen-protos
 make compose-run-consumer
 make compose-run-producer
+make compose-run-ingestor-coinbase
 ```
 
 ## Topics And Message Flow
@@ -141,6 +177,7 @@ The intended topic design is:
 
 At the moment, the example apps only use:
 
+- `raw.ticks.coinbase`
 - `normalized.ticks`
 
 ## Documentation

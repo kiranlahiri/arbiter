@@ -1,7 +1,8 @@
 SHELL := /bin/bash
 
-.PHONY: help up up-minimal down logs logs-follow gen-protos \
-run-producer run-consumer compose-run-producer compose-run-consumer \
+.PHONY: help up up-minimal down logs logs-follow gen-protos create-topics-dev \
+run-producer run-consumer run-ingestor-coinbase \
+compose-run-producer compose-run-consumer compose-run-ingestor-coinbase \
 compose-up-dev compose-down-dev
 
 help:
@@ -12,8 +13,11 @@ help:
 	@echo "  logs              Show recent logs for core services"
 	@echo "  logs-follow       Follow logs for core services"
 	@echo "  gen-protos        Generate Go protobufs (requires protoc + protoc-gen-go)"
+	@echo "  create-topics-dev Create the local Kafka topics used during development"
+	@echo "  run-ingestor-coinbase  Run the Coinbase ingestor locally"
 	@echo "  compose-run-producer  Run producer inside compose network (one-off)"
 	@echo "  compose-run-consumer  Run consumer inside compose network (one-off)"
+	@echo "  compose-run-ingestor-coinbase  Run Coinbase ingestor inside compose network (one-off)"
 	@echo "  compose-up-dev    Launch producer-dev and consumer-dev as background services"
 	@echo "  compose-down-dev  Stop background dev services"
 
@@ -37,12 +41,20 @@ logs-follow:
 gen-protos:
 	./scripts/generate_protos.sh
 
+create-topics-dev:
+	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic raw.ticks.coinbase --partitions 1 --replication-factor 1
+	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic normalized.ticks --partitions 1 --replication-factor 1
+	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic arbitrage.signals --partitions 1 --replication-factor 1
+
 ## Run Go examples inside compose network (one-off)
 compose-run-producer:
 	docker compose run --rm producer-dev
 
 compose-run-consumer:
 	docker compose run --rm consumer-dev
+
+compose-run-ingestor-coinbase:
+	docker compose run --rm ingestor-coinbase-dev
 
 ## Bring up dev services in background
 compose-up-dev:
@@ -57,3 +69,6 @@ run-consumer:
 
 run-producer:
 	go run ./cmd/producer
+
+run-ingestor-coinbase:
+	go run ./cmd/ingestor-coinbase

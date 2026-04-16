@@ -25,6 +25,7 @@ Completed so far:
 - defined Protobuf schemas for the core message types
 - generated Go bindings for those schemas
 - set up a local Kafka-based development stack with Docker Compose
+- implemented a first real Coinbase WebSocket ingestor that publishes `RawTick` messages
 - added a sample Go producer that publishes a `NormalizedTick`
 - added a sample Go consumer that reads and decodes `NormalizedTick`
 - added a Makefile and local developer reference notes
@@ -47,6 +48,19 @@ What it does not prove yet:
 ## How The Codebase Is Set Up
 
 The repo is intentionally small right now and is organized around the core building blocks of the future pipeline.
+
+### `cmd/ingestor-coinbase`
+
+This is the first real service-shaped component in the repo.
+
+It:
+
+- connects to the public Coinbase WebSocket feed
+- subscribes to ticker updates for one product
+- converts incoming JSON messages into `RawTick`
+- encodes them with Protobuf
+- publishes them to the Kafka topic `raw.ticks.coinbase`
+- reconnects with backoff if the WebSocket disconnects
 
 ### `proto/`
 
@@ -113,8 +127,10 @@ Current stack:
 - Language: Go
 - Messaging: Kafka
 - Serialization: Protobuf
+- Live exchange feed: Coinbase public WebSocket API
 - Local orchestration: Docker Compose
 - Kafka client: `segmentio/kafka-go`
+- WebSocket client: `gorilla/websocket`
 - Schema tooling: `protoc` + `protoc-gen-go`
 - Local Kafka support services: Zookeeper, Schema Registry, Kafdrop
 
@@ -142,6 +158,7 @@ This is the current maturity level by layer.
 - message schemas
 - generated language bindings
 - local Kafka runtime
+- first raw-tick ingestor for Coinbase
 - example publish/consume flow
 
 ### Partially represented in design only

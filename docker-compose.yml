@@ -69,3 +69,15 @@ services:
     working_dir: /go/src/github.com/kiran/arbiter
     command: ["sh","-c","go run ./cmd/producer"]
 
+  ingestor-coinbase-dev:
+    image: golang:1.20
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      RAW_TICKS_TOPIC: raw.ticks.coinbase
+      COINBASE_PRODUCT_ID: BTC-USD
+    volumes:
+      - ./:/go/src/github.com/kiran/arbiter
+    working_dir: /go/src/github.com/kiran/arbiter
+    command: ["sh","-c","go run ./cmd/ingestor-coinbase"]
