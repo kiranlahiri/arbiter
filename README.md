@@ -12,6 +12,7 @@ Right now, this repository contains the early foundation for that pipeline:
 - Generated Go bindings for those schemas
 - A local Kafka development stack using Docker Compose
 - A Coinbase WebSocket ingestor that publishes `RawTick` messages to Kafka
+- A normalizer service that converts `RawTick` messages into `NormalizedTick`
 - Example Go producer and consumer apps that exchange `NormalizedTick` messages
 - Local developer docs and Make targets for common workflows
 
@@ -24,6 +25,7 @@ Implemented:
 - Kafka + Schema Registry local stack
 - Protobuf message contracts
 - Coinbase ticker-feed ingestor for one product
+- Kafka normalizer from raw to normalized ticks
 - Example producer/consumer path
 - Environment-based Kafka broker configuration
 
@@ -61,6 +63,7 @@ Planned later:
 cmd/
   consumer/     Example Kafka consumer for NormalizedTick messages
   ingestor-coinbase/ Coinbase WebSocket ingestor publishing RawTick messages
+  normalizer/   Kafka normalizer from RawTick to NormalizedTick
   producer/     Example Kafka producer for NormalizedTick messages
 docs/
   local_kafka_reference.md
@@ -141,9 +144,34 @@ go run ./cmd/ingestor-coinbase
 Useful environment variables:
 
 - `KAFKA_BROKERS` default: `localhost:9092`
+- `KAFKA_TOPIC` default: `normalized.ticks`
+- `KAFKA_GROUP_ID` default: `arbiter-consumer`
 - `RAW_TICKS_TOPIC` default: `raw.ticks.coinbase`
 - `COINBASE_PRODUCT_ID` default: `BTC-USD`
 - `COINBASE_WS_URL` default: `wss://ws-feed.exchange.coinbase.com`
+
+### 6. Run the normalizer
+
+The Compose-network path is the recommended dev workflow.
+
+Inside the Compose network:
+
+```bash
+make compose-run-normalizer
+```
+
+Or directly on your host if your local Kafka listener setup matches the host-run configuration:
+
+```bash
+go run ./cmd/normalizer
+```
+
+Useful environment variables:
+
+- `KAFKA_BROKERS` default: `localhost:9092`
+- `RAW_TICKS_TOPIC` default: `raw.ticks.coinbase`
+- `NORMALIZED_TICKS_TOPIC` default: `normalized.ticks`
+- `KAFKA_GROUP_ID` default: `arbiter-normalizer`
 
 The sample apps use `KAFKA_BROKERS` when set.
 
@@ -163,6 +191,7 @@ make gen-protos
 make compose-run-consumer
 make compose-run-producer
 make compose-run-ingestor-coinbase
+make compose-run-normalizer
 ```
 
 ## Topics And Message Flow
@@ -190,10 +219,10 @@ At the moment, the example apps only use:
 Near-term plan:
 
 1. Build one real exchange ingestor.
-2. Build the normalizer service.
-3. Build a simple arbitrage detector.
-4. Emit `Signal` messages to Kafka.
-5. Add a live demo surface with WebSocket or REST.
+2. Build a simple arbitrage detector.
+3. Emit `Signal` messages to Kafka.
+4. Add a live demo surface with WebSocket or REST.
+5. Add more exchanges and symbol normalization rules.
 
 Longer-term plan:
 

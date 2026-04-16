@@ -26,6 +26,7 @@ Completed so far:
 - generated Go bindings for those schemas
 - set up a local Kafka-based development stack with Docker Compose
 - implemented a first real Coinbase WebSocket ingestor that publishes `RawTick` messages
+- implemented a normalizer service that converts `RawTick` into `NormalizedTick`
 - added a sample Go producer that publishes a `NormalizedTick`
 - added a sample Go consumer that reads and decodes `NormalizedTick`
 - added a Makefile and local developer reference notes
@@ -61,6 +62,18 @@ It:
 - encodes them with Protobuf
 - publishes them to the Kafka topic `raw.ticks.coinbase`
 - reconnects with backoff if the WebSocket disconnects
+
+### `cmd/normalizer`
+
+This is the next real service-shaped component in the repo.
+
+It:
+
+- consumes `RawTick` messages from Kafka
+- decodes them from Protobuf
+- maps them into the common `NormalizedTick` schema
+- publishes normalized messages to `normalized.ticks`
+- preserves traceability fields such as exchange, source sequence ID, and raw topic
 
 ### `proto/`
 
@@ -159,6 +172,7 @@ This is the current maturity level by layer.
 - generated language bindings
 - local Kafka runtime
 - first raw-tick ingestor for Coinbase
+- first normalizer from raw to normalized ticks
 - example publish/consume flow
 
 ### Partially represented in design only

@@ -53,6 +53,8 @@ services:
       - kafka
     environment:
       KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: normalized.ticks
+      KAFKA_GROUP_ID: arbiter-consumer
     volumes:
       - ./:/go/src/github.com/kiran/arbiter
     working_dir: /go/src/github.com/kiran/arbiter
@@ -81,3 +83,17 @@ services:
       - ./:/go/src/github.com/kiran/arbiter
     working_dir: /go/src/github.com/kiran/arbiter
     command: ["sh","-c","go run ./cmd/ingestor-coinbase"]
+
+  normalizer-dev:
+    image: golang:1.20
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      RAW_TICKS_TOPIC: raw.ticks.coinbase
+      NORMALIZED_TICKS_TOPIC: normalized.ticks
+      KAFKA_GROUP_ID: arbiter-normalizer
+    volumes:
+      - ./:/go/src/github.com/kiran/arbiter
+    working_dir: /go/src/github.com/kiran/arbiter
+    command: ["sh","-c","go run ./cmd/normalizer"]

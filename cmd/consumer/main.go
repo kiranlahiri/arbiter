@@ -12,11 +12,17 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+const (
+	defaultKafkaBroker   = "localhost:9092"
+	defaultConsumerGroup = "arbiter-consumer"
+	defaultConsumerTopic = "normalized.ticks"
+)
+
 func kafkaBrokers() []string {
 	// Allow the same binary to run either on the host or inside Docker Compose.
 	brokers := os.Getenv("KAFKA_BROKERS")
 	if brokers == "" {
-		return []string{"localhost:9092"}
+		return []string{defaultKafkaBroker}
 	}
 
 	parts := strings.Split(brokers, ",")
@@ -29,18 +35,29 @@ func kafkaBrokers() []string {
 	}
 
 	if len(resolved) == 0 {
-		return []string{"localhost:9092"}
+		return []string{defaultKafkaBroker}
 	}
 
 	return resolved
 }
 
+func envOrDefault(key, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
 func main() {
+	groupID := envOrDefault("KAFKA_GROUP_ID", defaultConsumerGroup)
+	topic := envOrDefault("KAFKA_TOPIC", defaultConsumerTopic)
+
 	// Subscribe to the normalized tick topic as a Kafka consumer group member.
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: kafkaBrokers(),
-		GroupID: "arbiter-consumer",
-		Topic:   "normalized.ticks",
+		GroupID: groupID,
+		Topic:   topic,
 	})
 	defer r.Close()
 
