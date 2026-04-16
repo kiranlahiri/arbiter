@@ -15,6 +15,7 @@ import (
 )
 
 func kafkaBrokers() []string {
+    // Allow the same binary to run either on the host or inside Docker Compose.
     brokers := os.Getenv("KAFKA_BROKERS")
     if brokers == "" {
         return []string{"localhost:9092"}
@@ -37,7 +38,7 @@ func kafkaBrokers() []string {
 }
 
 func main() {
-    // Create a sample NormalizedTick and publish to Kafka
+    // Build one sample protobuf message in memory.
     tick := &pb.NormalizedTick{
         Exchange:          "binance",
         Symbol:            "BTC-USDT",
@@ -51,12 +52,13 @@ func main() {
         Metadata:          map[string]string{"note": "example"},
     }
 
+    // Encode the structured protobuf message into bytes for Kafka transport.
     b, err := proto.Marshal(tick)
     if err != nil {
         panic(err)
     }
 
-    // kafka-go writer
+    // Create a Kafka writer for the normalized tick topic.
     w := kafka.NewWriter(kafka.WriterConfig{
         Brokers:  kafkaBrokers(),
         Topic:    "normalized.ticks",
@@ -64,9 +66,11 @@ func main() {
     })
     defer w.Close()
 
+    // Use a timeout so the publish does not hang forever if Kafka is unavailable.
     ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
     defer cancel()
 
+    // Publish the protobuf bytes to Kafka, keyed by symbol for stable partitioning.
     err = w.WriteMessages(ctx, kafka.Message{
         Key:   []byte(tick.Symbol),
         Value: b,
