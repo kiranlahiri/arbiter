@@ -1,0 +1,31 @@
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment and local overrides
+.env
+.env.*
+!.env.example
+
+# Go build and test artifacts
+bin/
+dist/
+build/
+coverage.out
+*.coverprofile
+*.test
+
+# Logs and temp files
+*.log
+tmp/
+.tmp/
+
+# Dependency directories
+node_modules/

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package arbiter.proto;
+
+option go_package = "github.com/kiran/arbiter/proto;proto";
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+// Normalized, exchange-agnostic tick used by downstream consumers.
+message NormalizedTick {
+  // Exchange that provided this tick (kept for attribution).
+  string exchange = 1;
+
+  // Canonical symbol, e.g. "BTC-USDT".
+  string symbol = 2;
+
+  double bid = 3;
+  double ask = 4;
+
+  // Exchange-provided timestamp (if present).
+  google.protobuf.Timestamp timestamp_exchange = 5;
+
+  // When the ingestor received the tick.
+  google.protobuf.Timestamp timestamp_received = 6;
+
+  // When the normalizer produced this normalized tick.
+  google.protobuf.Timestamp timestamp_normalized = 7;
+
+  // Ids for traceability back to raw messages.
+  string source_sequence_id = 8;
+  string raw_topic = 9;
+
+  // Optional additional metadata.
+  map<string, string> metadata = 10;
+}

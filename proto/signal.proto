@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package arbiter.proto;
+
+option go_package = "github.com/kiran/arbiter/proto;proto";
+
+import "google/protobuf/timestamp.proto";
+
+// Arbitrage signal schema emitted by the detector.
+message Signal {
+  // Canonical symbol, e.g. "BTC-USDT".
+  string symbol = 1;
+
+  // Where to buy and where to sell.
+  string buy_exchange = 2;
+  string sell_exchange = 3;
+
+  double buy_price = 4;
+  double sell_price = 5;
+
+  // sell_price - buy_price
+  double spread = 6;
+
+  // Profit after fees/estimated costs.
+  double fee_adjusted_profit = 7;
+
+  // When the opportunity was observed/detected.
+  google.protobuf.Timestamp timestamp_opportunity = 8;
+
+  // When the contributing tick(s) were received by the ingestor(s).
+  google.protobuf.Timestamp timestamp_tick_received = 9;
+
+  // End-to-end latency measured in milliseconds from ingestor receive -> signal publish.
+  int64 latency_ms = 10;
+
+  // Optional context for debugging: per-exchange timestamps, sequence ids, etc.
+  map<string, string> metadata = 11;
+
+  // Optional confidence/estimated volume to help filter signals.
+  double estimated_volume = 12;
+  double confidence = 13;
+}

@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package arbiter.proto;
+
+option go_package = "github.com/kiran/arbiter/proto;proto";
+
+import "google/protobuf/timestamp.proto";
+
+// Common metadata included with ticks to carry per-hop timestamps and IDs.
+message TickMeta {
+  // Exchange name, e.g. "binance", "coinbase", "kraken".
+  string exchange = 1;
+
+  // Canonical symbol string, e.g. "BTC-USDT".
+  string symbol = 2;
+
+  // Optional sequence id or unique id supplied by exchange (if available).
+  string sequence_id = 3;
+
+  // Timestamp supplied by the exchange (event time) when available.
+  google.protobuf.Timestamp timestamp_exchange = 4;
+
+  // Timestamp when the ingestor received the tick (producer timestamp in design).
+  google.protobuf.Timestamp timestamp_ingestor_received = 5;
+
+  // Any raw source identifier (e.g. websocket channel) useful for debugging.
+  string source = 6;
+}

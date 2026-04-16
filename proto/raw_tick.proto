@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package arbiter.proto;
+
+option go_package = "github.com/kiran/arbiter/proto;proto";
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+// Raw tick format as received from an exchange, minimally parsed and
+// annotated with ingestor timestamps.
+message RawTick {
+  // Common metadata including exchange and symbol.
+  TickMeta meta = 1;
+
+  // The raw payload (JSON or binary) as received from the exchange, useful
+  // for replay and debugging.
+  bytes raw_payload = 2;
+
+  // Price fields when available. Some exchanges provide separate fields.
+  double price = 3;
+  double bid = 4;
+  double ask = 5;
+  double volume = 6;
+
+  // Free-form metadata (key/value) for exchange-specific info.
+  map<string, string> metadata = 7;
+}
