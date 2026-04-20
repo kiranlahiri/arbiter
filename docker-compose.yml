@@ -84,6 +84,19 @@ services:
     working_dir: /go/src/github.com/kiran/arbiter
     command: ["sh","-c","go run ./cmd/ingestor-coinbase"]
 
+  ingestor-kraken-dev:
+    image: golang:1.20
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      RAW_TICKS_TOPIC: raw.ticks.kraken
+      KRAKEN_SYMBOL: BTC/USD
+    volumes:
+      - ./:/go/src/github.com/kiran/arbiter
+    working_dir: /go/src/github.com/kiran/arbiter
+    command: ["sh","-c","go run ./cmd/ingestor-kraken"]
+
   normalizer-dev:
     image: golang:1.20
     depends_on:
@@ -97,3 +110,31 @@ services:
       - ./:/go/src/github.com/kiran/arbiter
     working_dir: /go/src/github.com/kiran/arbiter
     command: ["sh","-c","go run ./cmd/normalizer"]
+
+  normalizer-kraken-dev:
+    image: golang:1.20
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      RAW_TICKS_TOPIC: raw.ticks.kraken
+      NORMALIZED_TICKS_TOPIC: normalized.ticks
+      KAFKA_GROUP_ID: arbiter-normalizer-kraken
+    volumes:
+      - ./:/go/src/github.com/kiran/arbiter
+    working_dir: /go/src/github.com/kiran/arbiter
+    command: ["sh","-c","go run ./cmd/normalizer"]
+
+  detector-dev:
+    image: golang:1.20
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      NORMALIZED_TICKS_TOPIC: normalized.ticks
+      SIGNALS_TOPIC: arbitrage.signals
+      KAFKA_GROUP_ID: arbiter-detector
+    volumes:
+      - ./:/go/src/github.com/kiran/arbiter
+    working_dir: /go/src/github.com/kiran/arbiter
+    command: ["sh","-c","go run ./cmd/detector"]

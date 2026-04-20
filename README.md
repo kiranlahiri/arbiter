@@ -12,6 +12,7 @@ Right now, this repository contains the early foundation for that pipeline:
 - Generated Go bindings for those schemas
 - A local Kafka development stack using Docker Compose
 - A Coinbase WebSocket ingestor that publishes `RawTick` messages to Kafka
+- A Kraken WebSocket ingestor that publishes `RawTick` messages to Kafka
 - A normalizer service that converts `RawTick` messages into `NormalizedTick`
 - A detector service that tracks latest quotes by symbol/exchange and emits `Signal` messages when spreads qualify
 - Example Go producer and consumer apps that exchange `NormalizedTick` messages
@@ -26,6 +27,7 @@ Implemented:
 - Kafka + Schema Registry local stack
 - Protobuf message contracts
 - Coinbase ticker-feed ingestor for one product
+- Kraken ticker-feed ingestor for one product
 - Kafka normalizer from raw to normalized ticks
 - Detector state machine for multi-exchange spread checks
 - Example producer/consumer path
@@ -66,6 +68,7 @@ cmd/
   consumer/     Example Kafka consumer for NormalizedTick messages
   detector/     Arbitrage detector consuming NormalizedTick and producing Signal
   ingestor-coinbase/ Coinbase WebSocket ingestor publishing RawTick messages
+  ingestor-kraken/ Kraken WebSocket ingestor publishing RawTick messages
   normalizer/   Kafka normalizer from RawTick to NormalizedTick
   producer/     Example Kafka producer for NormalizedTick messages
 docs/
@@ -153,7 +156,30 @@ Useful environment variables:
 - `COINBASE_PRODUCT_ID` default: `BTC-USD`
 - `COINBASE_WS_URL` default: `wss://ws-feed.exchange.coinbase.com`
 
-### 6. Run the normalizer
+### 6. Run the Kraken ingestor
+
+The Compose-network path is the recommended dev workflow.
+
+Inside the Compose network:
+
+```bash
+make compose-run-ingestor-kraken
+```
+
+Or directly on your host if your local Kafka listener setup matches the host-run configuration:
+
+```bash
+go run ./cmd/ingestor-kraken
+```
+
+Useful environment variables:
+
+- `KAFKA_BROKERS` default: `localhost:9092`
+- `RAW_TICKS_TOPIC` default: `raw.ticks.kraken`
+- `KRAKEN_SYMBOL` default: `BTC/USD`
+- `KRAKEN_WS_URL` default: `wss://ws.kraken.com/v2`
+
+### 7. Run the normalizer
 
 The Compose-network path is the recommended dev workflow.
 
@@ -161,6 +187,7 @@ Inside the Compose network:
 
 ```bash
 make compose-run-normalizer
+make compose-run-normalizer-kraken
 ```
 
 Or directly on your host if your local Kafka listener setup matches the host-run configuration:
@@ -176,7 +203,9 @@ Useful environment variables:
 - `NORMALIZED_TICKS_TOPIC` default: `normalized.ticks`
 - `KAFKA_GROUP_ID` default: `arbiter-normalizer`
 
-### 7. Run the detector
+Use the same normalizer binary with `RAW_TICKS_TOPIC=raw.ticks.kraken` and a different consumer group for Kraken.
+
+### 8. Run the detector
 
 The Compose-network path is the recommended dev workflow.
 
@@ -221,7 +250,9 @@ make gen-protos
 make compose-run-consumer
 make compose-run-producer
 make compose-run-ingestor-coinbase
+make compose-run-ingestor-kraken
 make compose-run-normalizer
+make compose-run-normalizer-kraken
 make compose-run-detector
 ```
 
@@ -238,6 +269,7 @@ The intended topic design is:
 At the moment, the example apps only use:
 
 - `raw.ticks.coinbase`
+- `raw.ticks.kraken`
 - `normalized.ticks`
 - `arbitrage.signals`
 
@@ -251,7 +283,7 @@ At the moment, the example apps only use:
 Near-term plan:
 
 1. Build one real exchange ingestor.
-2. Add a second exchange so the detector can emit real cross-exchange signals.
+2. Validate live cross-exchange signals between Coinbase and Kraken.
 3. Add a live demo surface with WebSocket or REST.
 4. Add more exchanges and symbol normalization rules.
 5. Persist signals and latency metrics.

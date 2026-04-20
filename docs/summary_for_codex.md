@@ -26,7 +26,9 @@ Completed so far:
 - generated Go bindings for those schemas
 - set up a local Kafka-based development stack with Docker Compose
 - implemented a first real Coinbase WebSocket ingestor that publishes `RawTick` messages
+- implemented a Kraken WebSocket ingestor that publishes `RawTick` messages
 - implemented a normalizer service that converts `RawTick` into `NormalizedTick`
+- implemented a detector service that tracks per-symbol quotes and is ready to emit `Signal` messages once multiple exchanges are present
 - added a sample Go producer that publishes a `NormalizedTick`
 - added a sample Go consumer that reads and decodes `NormalizedTick`
 - added a Makefile and local developer reference notes
@@ -63,6 +65,19 @@ It:
 - publishes them to the Kafka topic `raw.ticks.coinbase`
 - reconnects with backoff if the WebSocket disconnects
 
+### `cmd/ingestor-kraken`
+
+This is the second real exchange ingestor in the repo.
+
+It:
+
+- connects to the public Kraken WebSocket feed
+- subscribes to ticker updates for one symbol
+- converts incoming JSON messages into `RawTick`
+- encodes them with Protobuf
+- publishes them to the Kafka topic `raw.ticks.kraken`
+- reconnects with backoff if the WebSocket disconnects
+
 ### `cmd/normalizer`
 
 This is the next real service-shaped component in the repo.
@@ -74,6 +89,22 @@ It:
 - maps them into the common `NormalizedTick` schema
 - publishes normalized messages to `normalized.ticks`
 - preserves traceability fields such as exchange, source sequence ID, and raw topic
+
+It now also canonicalizes symbol formats like `BTC/USD` into `BTC-USD` so multiple exchanges can be compared by the detector.
+
+### `cmd/detector`
+
+This is the first version of the arbitrage detector.
+
+It:
+
+- consumes normalized ticks from Kafka
+- keeps the latest quote per exchange per symbol in memory
+- filters out stale quotes
+- compares buy/sell exchange pairs for each symbol
+- publishes `Signal` messages when a spread beats the configured fee/threshold settings
+
+With Coinbase and Kraken now both implemented, the detector can begin real cross-exchange comparisons once both normalized feeds are running at the same time.
 
 ### `proto/`
 
@@ -141,6 +172,7 @@ Current stack:
 - Messaging: Kafka
 - Serialization: Protobuf
 - Live exchange feed: Coinbase public WebSocket API
+- Live exchange feed: Kraken public WebSocket API
 - Local orchestration: Docker Compose
 - Kafka client: `segmentio/kafka-go`
 - WebSocket client: `gorilla/websocket`
@@ -172,7 +204,9 @@ This is the current maturity level by layer.
 - generated language bindings
 - local Kafka runtime
 - first raw-tick ingestor for Coinbase
+- first raw-tick ingestor for Kraken
 - first normalizer from raw to normalized ticks
+- first detector implementation over normalized ticks
 - example publish/consume flow
 
 ### Partially represented in design only

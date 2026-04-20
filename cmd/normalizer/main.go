@@ -64,9 +64,21 @@ func cloneMetadata(input map[string]string) map[string]string {
 }
 
 func normalizeSymbol(exchange, symbol string) string {
-	// Keep the current product id as the canonical symbol for now.
-	// We can introduce true cross-exchange symbol mapping once more feeds exist.
-	return symbol
+	normalized := strings.ToUpper(strings.TrimSpace(symbol))
+	normalized = strings.ReplaceAll(normalized, "/", "-")
+
+	parts := strings.Split(normalized, "-")
+	if len(parts) == 2 {
+		if parts[0] == "XBT" {
+			parts[0] = "BTC"
+		}
+		if parts[1] == "XBT" {
+			parts[1] = "BTC"
+		}
+		return parts[0] + "-" + parts[1]
+	}
+
+	return normalized
 }
 
 func normalizeRawTick(rawTopic string, rawTick *pb.RawTick, normalizedAt time.Time) *pb.NormalizedTick {

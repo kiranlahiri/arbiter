@@ -13,7 +13,7 @@ Broker address guide:
 - Use `localhost:9092` when running Go commands on your host machine.
 - Use `kafka:9092` when running from another container on the Compose network.
 - The sample `producer-dev`, `consumer-dev`, and `ingestor-coinbase-dev` services set `KAFKA_BROKERS=kafka:9092` automatically.
-- The sample `producer-dev`, `consumer-dev`, `ingestor-coinbase-dev`, and `normalizer-dev` services set `KAFKA_BROKERS=kafka:9092` automatically.
+- The sample `producer-dev`, `consumer-dev`, `ingestor-coinbase-dev`, `ingestor-kraken-dev`, `normalizer-dev`, `normalizer-kraken-dev`, and `detector-dev` services set `KAFKA_BROKERS=kafka:9092` automatically.
 
 ## Check running containers and logs
 
@@ -42,6 +42,10 @@ Create the main local dev topics used by the repo:
 docker compose exec kafka kafka-topics \
   --bootstrap-server localhost:9092 \
   --create --if-not-exists --topic raw.ticks.coinbase --partitions 1 --replication-factor 1
+
+docker compose exec kafka kafka-topics \
+  --bootstrap-server localhost:9092 \
+  --create --if-not-exists --topic raw.ticks.kraken --partitions 1 --replication-factor 1
 
 docker compose exec kafka kafka-topics \
   --bootstrap-server localhost:9092 \
@@ -136,10 +140,23 @@ Run the Coinbase ingestor inside the Compose network:
 docker compose run --rm ingestor-coinbase-dev
 ```
 
+Run the Kraken ingestor inside the Compose network:
+
+```bash
+docker compose run --rm ingestor-kraken-dev
+```
+
 Run the normalizer inside the Compose network:
 
 ```bash
 docker compose run --rm normalizer-dev
+docker compose run --rm normalizer-kraken-dev
+```
+
+Run the detector inside the Compose network:
+
+```bash
+docker compose run --rm detector-dev
 ```
 
 ## Run the Go examples on the host
@@ -157,7 +174,9 @@ You can also override the brokers explicitly:
 KAFKA_BROKERS=localhost:9092 go run ./cmd/consumer
 KAFKA_BROKERS=localhost:9092 go run ./cmd/producer
 KAFKA_BROKERS=localhost:9092 go run ./cmd/ingestor-coinbase
+KAFKA_BROKERS=localhost:9092 go run ./cmd/ingestor-kraken
 KAFKA_BROKERS=localhost:9092 go run ./cmd/normalizer
+KAFKA_BROKERS=localhost:9092 go run ./cmd/detector
 ```
 
 If you want a fresh consumer-group view of `normalized.ticks`, override the group id:

@@ -42,6 +42,7 @@ type detector struct {
 	feeBps            float64
 	maxQuoteAge       time.Duration
 	minSignalInterval time.Duration
+	debug             bool
 	quotesBySymbol    map[string]map[string]quote
 	lastSignalAt      map[string]time.Time
 }
@@ -104,6 +105,32 @@ func durationMsEnv(key string, fallback time.Duration) time.Duration {
 	return time.Duration(parsed) * time.Millisecond
 }
 
+func startOffsetEnv(key string, fallback int64) int64 {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch value {
+	case "", "latest":
+		return fallback
+	case "first", "earliest":
+		return kafka.FirstOffset
+	default:
+		return fallback
+	}
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch value {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
 func cloneMetadata(input map[string]string) map[string]string {
 	if len(input) == 0 {
 		return map[string]string{}
@@ -132,6 +159,7 @@ func newDetector(writer *kafka.Writer, signalsTopic string) *detector {
 		feeBps:            floatEnv("FEE_BPS", 0),
 		maxQuoteAge:       durationMsEnv("MAX_QUOTE_AGE_MS", defaultMaxQuoteAge),
 		minSignalInterval: durationMsEnv("MIN_SIGNAL_INTERVAL_MS", defaultMinSignalInterval),
+		debug:             boolEnv("DETECTOR_DEBUG", false),
 		quotesBySymbol:    map[string]map[string]quote{},
 		lastSignalAt:      map[string]time.Time{},
 	}
@@ -164,9 +192,22 @@ func (d *detector) activeQuotes(symbol string, now time.Time) []quote {
 	active := make([]quote, 0, len(quotes))
 	for _, q := range quotes {
 		if q.timestampReceived.IsZero() {
+			if d.debug {
+				log.Printf("skipping quote symbol=%s exchange=%s reason=missing_timestamp", symbol, q.exchange)
+			}
 			continue
 		}
-		if now.Sub(q.timestampReceived) > d.maxQuoteAge {
+		age := now.Sub(q.timestampReceived)
+		if age > d.maxQuoteAge {
+			if d.debug {
+				log.Printf(
+					"skipping quote symbol=%s exchange=%s reason=stale age_ms=%d max_age_ms=%d",
+					symbol,
+					q.exchange,
+					age.Milliseconds(),
+					d.maxQuoteAge.Milliseconds(),
+				)
+			}
 			continue
 		}
 		active = append(active, q)
@@ -199,13 +240,45 @@ func (d *detector) signalKey(symbol, buyExchange, sellExchange string) string {
 func (d *detector) emitSignal(symbol string, buyQuote, sellQuote quote, now time.Time) error {
 	spread := sellQuote.bid - buyQuote.ask
 	feeAdjustedProfit := spread - feeCost(buyQuote.ask, sellQuote.bid, d.feeBps)
+	if d.debug {
+		log.Printf(
+			"evaluated pair symbol=%s buy=%s sell=%s buy_ask=%0.2f sell_bid=%0.2f spread=%0.2f fee_adjusted=%0.2f",
+			symbol,
+			buyQuote.exchange,
+			sellQuote.exchange,
+			buyQuote.ask,
+			sellQuote.bid,
+			spread,
+			feeAdjustedProfit,
+		)
+	}
 	if feeAdjustedProfit <= d.minProfit {
+		if d.debug {
+			log.Printf(
+				"skipping signal symbol=%s buy=%s sell=%s reason=below_threshold min_profit=%0.2f fee_adjusted=%0.2f",
+				symbol,
+				buyQuote.exchange,
+				sellQuote.exchange,
+				d.minProfit,
+				feeAdjustedProfit,
+			)
+		}
 		return nil
 	}
 
 	key := d.signalKey(symbol, buyQuote.exchange, sellQuote.exchange)
 	lastEmittedAt := d.lastSignalAt[key]
 	if !lastEmittedAt.IsZero() && now.Sub(lastEmittedAt) < d.minSignalInterval {
+		if d.debug {
+			log.Printf(
+				"skipping signal symbol=%s buy=%s sell=%s reason=cooldown since_last_ms=%d min_interval_ms=%d",
+				symbol,
+				buyQuote.exchange,
+				sellQuote.exchange,
+				now.Sub(lastEmittedAt).Milliseconds(),
+				d.minSignalInterval.Milliseconds(),
+			)
+		}
 		return nil
 	}
 
@@ -276,6 +349,14 @@ func (d *detector) processTick(tick *pb.NormalizedTick, processedAt time.Time) e
 	)
 
 	if len(active) < 2 {
+		if d.debug {
+			log.Printf(
+				"not enough active quotes symbol=%s exchange=%s active_exchanges=%d",
+				updatedQuote.symbol,
+				updatedQuote.exchange,
+				len(active),
+			)
+		}
 		return nil
 	}
 
@@ -304,9 +385,10 @@ func main() {
 	groupID := envOrDefault("KAFKA_GROUP_ID", defaultDetectorGroupID)
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: kafkaBrokers(),
-		GroupID: groupID,
-		Topic:   normalizedTopic,
+		Brokers:     kafkaBrokers(),
+		GroupID:     groupID,
+		Topic:       normalizedTopic,
+		StartOffset: startOffsetEnv("KAFKA_START_OFFSET", kafka.LastOffset),
 	})
 	defer reader.Close()
 
