@@ -13,6 +13,7 @@ Right now, this repository contains the early foundation for that pipeline:
 - A local Kafka development stack using Docker Compose
 - A Coinbase WebSocket ingestor that publishes `RawTick` messages to Kafka
 - A normalizer service that converts `RawTick` messages into `NormalizedTick`
+- A detector service that tracks latest quotes by symbol/exchange and emits `Signal` messages when spreads qualify
 - Example Go producer and consumer apps that exchange `NormalizedTick` messages
 - Local developer docs and Make targets for common workflows
 
@@ -26,6 +27,7 @@ Implemented:
 - Protobuf message contracts
 - Coinbase ticker-feed ingestor for one product
 - Kafka normalizer from raw to normalized ticks
+- Detector state machine for multi-exchange spread checks
 - Example producer/consumer path
 - Environment-based Kafka broker configuration
 
@@ -62,6 +64,7 @@ Planned later:
 ```text
 cmd/
   consumer/     Example Kafka consumer for NormalizedTick messages
+  detector/     Arbitrage detector consuming NormalizedTick and producing Signal
   ingestor-coinbase/ Coinbase WebSocket ingestor publishing RawTick messages
   normalizer/   Kafka normalizer from RawTick to NormalizedTick
   producer/     Example Kafka producer for NormalizedTick messages
@@ -173,6 +176,33 @@ Useful environment variables:
 - `NORMALIZED_TICKS_TOPIC` default: `normalized.ticks`
 - `KAFKA_GROUP_ID` default: `arbiter-normalizer`
 
+### 7. Run the detector
+
+The Compose-network path is the recommended dev workflow.
+
+Inside the Compose network:
+
+```bash
+make compose-run-detector
+```
+
+Or directly on your host if your local Kafka listener setup matches the host-run configuration:
+
+```bash
+go run ./cmd/detector
+```
+
+Useful environment variables:
+
+- `KAFKA_BROKERS` default: `localhost:9092`
+- `NORMALIZED_TICKS_TOPIC` default: `normalized.ticks`
+- `SIGNALS_TOPIC` default: `arbitrage.signals`
+- `KAFKA_GROUP_ID` default: `arbiter-detector`
+- `FEE_BPS` default: `0`
+- `MIN_SIGNAL_PROFIT` default: `0`
+- `MAX_QUOTE_AGE_MS` default: `5000`
+- `MIN_SIGNAL_INTERVAL_MS` default: `500`
+
 The sample apps use `KAFKA_BROKERS` when set.
 
 - Host default: `localhost:9092`
@@ -192,6 +222,7 @@ make compose-run-consumer
 make compose-run-producer
 make compose-run-ingestor-coinbase
 make compose-run-normalizer
+make compose-run-detector
 ```
 
 ## Topics And Message Flow
@@ -208,6 +239,7 @@ At the moment, the example apps only use:
 
 - `raw.ticks.coinbase`
 - `normalized.ticks`
+- `arbitrage.signals`
 
 ## Documentation
 
@@ -219,10 +251,10 @@ At the moment, the example apps only use:
 Near-term plan:
 
 1. Build one real exchange ingestor.
-2. Build a simple arbitrage detector.
-3. Emit `Signal` messages to Kafka.
-4. Add a live demo surface with WebSocket or REST.
-5. Add more exchanges and symbol normalization rules.
+2. Add a second exchange so the detector can emit real cross-exchange signals.
+3. Add a live demo surface with WebSocket or REST.
+4. Add more exchanges and symbol normalization rules.
+5. Persist signals and latency metrics.
 
 Longer-term plan:
 
