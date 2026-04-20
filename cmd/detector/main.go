@@ -341,12 +341,14 @@ func (d *detector) processTick(tick *pb.NormalizedTick, processedAt time.Time) e
 	updatedQuote := d.updateQuote(tick, processedAt)
 	active := d.activeQuotes(updatedQuote.symbol, processedAt)
 
-	log.Printf(
-		"updated detector state symbol=%s exchange=%s active_exchanges=%d",
-		updatedQuote.symbol,
-		updatedQuote.exchange,
-		len(active),
-	)
+	if d.debug {
+		log.Printf(
+			"updated detector state symbol=%s exchange=%s active_exchanges=%d",
+			updatedQuote.symbol,
+			updatedQuote.exchange,
+			len(active),
+		)
+	}
 
 	if len(active) < 2 {
 		if d.debug {

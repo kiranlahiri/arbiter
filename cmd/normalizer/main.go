@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +19,13 @@ const (
 	defaultRawTopic        = "raw.ticks.coinbase"
 	defaultNormalizedTopic = "normalized.ticks"
 	defaultConsumerGroup   = "arbiter-normalizer"
+	defaultLogEveryN       = 25
 )
+
+type serviceConfig struct {
+	debug     bool
+	logEveryN int
+}
 
 func kafkaBrokers() []string {
 	brokers := os.Getenv("KAFKA_BROKERS")
@@ -48,6 +55,46 @@ func envOrDefault(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func startOffsetEnv(key string, fallback int64) int64 {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch value {
+	case "", "latest":
+		return fallback
+	case "first", "earliest":
+		return kafka.FirstOffset
+	default:
+		return fallback
+	}
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch value {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
+func intEnv(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+
+	return parsed
 }
 
 func cloneMetadata(input map[string]string) map[string]string {
@@ -106,11 +153,16 @@ func main() {
 	rawTopic := envOrDefault("RAW_TICKS_TOPIC", defaultRawTopic)
 	normalizedTopic := envOrDefault("NORMALIZED_TICKS_TOPIC", defaultNormalizedTopic)
 	groupID := envOrDefault("KAFKA_GROUP_ID", defaultConsumerGroup)
+	cfg := serviceConfig{
+		debug:     boolEnv("NORMALIZER_DEBUG", false),
+		logEveryN: intEnv("NORMALIZER_LOG_EVERY_N", defaultLogEveryN),
+	}
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: kafkaBrokers(),
-		GroupID: groupID,
-		Topic:   rawTopic,
+		Brokers:     kafkaBrokers(),
+		GroupID:     groupID,
+		Topic:       rawTopic,
+		StartOffset: startOffsetEnv("KAFKA_START_OFFSET", kafka.LastOffset),
 	})
 	defer reader.Close()
 
@@ -130,6 +182,7 @@ func main() {
 	)
 
 	ctx := context.Background()
+	processedCount := 0
 	for {
 		message, err := reader.ReadMessage(ctx)
 		if err != nil {
@@ -162,12 +215,25 @@ func main() {
 			continue
 		}
 
-		log.Printf(
-			"published normalized tick exchange=%s symbol=%s bid=%0.2f ask=%0.2f",
-			normalizedTick.GetExchange(),
-			normalizedTick.GetSymbol(),
-			normalizedTick.GetBid(),
-			normalizedTick.GetAsk(),
-		)
+		processedCount++
+		if cfg.debug {
+			log.Printf(
+				"published normalized tick exchange=%s symbol=%s bid=%0.2f ask=%0.2f",
+				normalizedTick.GetExchange(),
+				normalizedTick.GetSymbol(),
+				normalizedTick.GetBid(),
+				normalizedTick.GetAsk(),
+			)
+			continue
+		}
+
+		if processedCount == 1 || processedCount%cfg.logEveryN == 0 {
+			log.Printf(
+				"normalized ticks processed=%d last_exchange=%s last_symbol=%s",
+				processedCount,
+				normalizedTick.GetExchange(),
+				normalizedTick.GetSymbol(),
+			)
+		}
 	}
 }

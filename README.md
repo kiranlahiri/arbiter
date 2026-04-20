@@ -113,7 +113,38 @@ This requires `protoc` and `protoc-gen-go`.
 make create-topics-dev
 ```
 
-### 4. Run the example consumer and producer
+### 4. Start the live pipeline
+
+The most reliable local dev workflow is to run the pipeline as long-lived Compose services:
+
+```bash
+make compose-up-pipeline
+make logs-pipeline
+```
+
+This keeps the ingestors, normalizers, and detector alive continuously, which avoids stale-data issues caused by short-lived startup churn.
+
+Stop the live pipeline with:
+
+```bash
+make compose-down-pipeline
+```
+
+For the cleanest arbitrage validation, use the isolated live-topic workflow so old topic history does not pollute the detector:
+
+```bash
+make create-topics-live
+make compose-up-pipeline-live
+make logs-pipeline-live
+```
+
+Stop that isolated validation pipeline with:
+
+```bash
+make compose-down-pipeline-live
+```
+
+### 5. Run the example consumer and producer
 
 The Compose-network path is the recommended dev workflow.
 
@@ -131,7 +162,7 @@ go run ./cmd/consumer
 go run ./cmd/producer
 ```
 
-### 5. Run the Coinbase ingestor
+### 6. Run the Coinbase ingestor
 
 The Compose-network path is the recommended dev workflow.
 
@@ -155,8 +186,9 @@ Useful environment variables:
 - `RAW_TICKS_TOPIC` default: `raw.ticks.coinbase`
 - `COINBASE_PRODUCT_ID` default: `BTC-USD`
 - `COINBASE_WS_URL` default: `wss://ws-feed.exchange.coinbase.com`
+- `INGESTOR_DEBUG` default: `false`
 
-### 6. Run the Kraken ingestor
+### 7. Run the Kraken ingestor
 
 The Compose-network path is the recommended dev workflow.
 
@@ -178,8 +210,9 @@ Useful environment variables:
 - `RAW_TICKS_TOPIC` default: `raw.ticks.kraken`
 - `KRAKEN_SYMBOL` default: `BTC/USD`
 - `KRAKEN_WS_URL` default: `wss://ws.kraken.com/v2`
+- `INGESTOR_DEBUG` default: `false`
 
-### 7. Run the normalizer
+### 8. Run the normalizer
 
 The Compose-network path is the recommended dev workflow.
 
@@ -202,10 +235,12 @@ Useful environment variables:
 - `RAW_TICKS_TOPIC` default: `raw.ticks.coinbase`
 - `NORMALIZED_TICKS_TOPIC` default: `normalized.ticks`
 - `KAFKA_GROUP_ID` default: `arbiter-normalizer`
+- `NORMALIZER_DEBUG` default: `false`
+- `NORMALIZER_LOG_EVERY_N` default: `25`
 
 Use the same normalizer binary with `RAW_TICKS_TOPIC=raw.ticks.kraken` and a different consumer group for Kraken.
 
-### 8. Run the detector
+### 9. Run the detector
 
 The Compose-network path is the recommended dev workflow.
 
@@ -231,6 +266,7 @@ Useful environment variables:
 - `MIN_SIGNAL_PROFIT` default: `0`
 - `MAX_QUOTE_AGE_MS` default: `5000`
 - `MIN_SIGNAL_INTERVAL_MS` default: `500`
+- `DETECTOR_DEBUG` default: `false`
 
 The sample apps use `KAFKA_BROKERS` when set.
 
@@ -243,6 +279,13 @@ The sample apps use `KAFKA_BROKERS` when set.
 make up
 make up-minimal
 make create-topics-dev
+make create-topics-live
+make compose-up-pipeline
+make compose-up-pipeline-live
+make compose-down-pipeline
+make compose-down-pipeline-live
+make logs-pipeline
+make logs-pipeline-live
 make down
 make logs
 make logs-follow

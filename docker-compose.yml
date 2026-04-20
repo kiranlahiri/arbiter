@@ -1,3 +1,17 @@
+volumes:
+  go-mod-cache:
+  go-build-cache:
+
+x-go-dev-service: &go-dev-service
+  image: golang:1.20
+  depends_on:
+    - kafka
+  volumes:
+    - ./:/go/src/github.com/kiran/arbiter
+    - go-mod-cache:/go/pkg/mod
+    - go-build-cache:/root/.cache/go-build
+  working_dir: /go/src/github.com/kiran/arbiter
+
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
@@ -48,93 +62,66 @@ services:
 
   # Development helpers: run the Go producer/consumer inside the compose network
   consumer-dev:
-    image: golang:1.20
-    depends_on:
-      - kafka
+    <<: *go-dev-service
     environment:
       KAFKA_BROKERS: kafka:9092
-      KAFKA_TOPIC: normalized.ticks
-      KAFKA_GROUP_ID: arbiter-consumer
-    volumes:
-      - ./:/go/src/github.com/kiran/arbiter
-    working_dir: /go/src/github.com/kiran/arbiter
+      KAFKA_TOPIC: ${NORMALIZED_TICKS_TOPIC:-normalized.ticks}
+      KAFKA_GROUP_ID: ${CONSUMER_GROUP_ID:-arbiter-consumer}
     command: ["sh","-c","go run ./cmd/consumer"]
 
   producer-dev:
-    image: golang:1.20
-    depends_on:
-      - kafka
+    <<: *go-dev-service
     environment:
       KAFKA_BROKERS: kafka:9092
-    volumes:
-      - ./:/go/src/github.com/kiran/arbiter
-    working_dir: /go/src/github.com/kiran/arbiter
     command: ["sh","-c","go run ./cmd/producer"]
 
   ingestor-coinbase-dev:
-    image: golang:1.20
-    depends_on:
-      - kafka
+    <<: *go-dev-service
+    restart: unless-stopped
     environment:
       KAFKA_BROKERS: kafka:9092
-      RAW_TICKS_TOPIC: raw.ticks.coinbase
-      COINBASE_PRODUCT_ID: BTC-USD
-    volumes:
-      - ./:/go/src/github.com/kiran/arbiter
-    working_dir: /go/src/github.com/kiran/arbiter
+      RAW_TICKS_TOPIC: ${RAW_TICKS_COINBASE_TOPIC:-raw.ticks.coinbase}
+      COINBASE_PRODUCT_ID: ${COINBASE_PRODUCT_ID:-BTC-USD}
     command: ["sh","-c","go run ./cmd/ingestor-coinbase"]
 
   ingestor-kraken-dev:
-    image: golang:1.20
-    depends_on:
-      - kafka
+    <<: *go-dev-service
+    restart: unless-stopped
     environment:
       KAFKA_BROKERS: kafka:9092
-      RAW_TICKS_TOPIC: raw.ticks.kraken
-      KRAKEN_SYMBOL: BTC/USD
-    volumes:
-      - ./:/go/src/github.com/kiran/arbiter
-    working_dir: /go/src/github.com/kiran/arbiter
+      RAW_TICKS_TOPIC: ${RAW_TICKS_KRAKEN_TOPIC:-raw.ticks.kraken}
+      KRAKEN_SYMBOL: ${KRAKEN_SYMBOL:-BTC/USD}
     command: ["sh","-c","go run ./cmd/ingestor-kraken"]
 
   normalizer-dev:
-    image: golang:1.20
-    depends_on:
-      - kafka
+    <<: *go-dev-service
+    restart: unless-stopped
     environment:
       KAFKA_BROKERS: kafka:9092
-      RAW_TICKS_TOPIC: raw.ticks.coinbase
-      NORMALIZED_TICKS_TOPIC: normalized.ticks
-      KAFKA_GROUP_ID: arbiter-normalizer
-    volumes:
-      - ./:/go/src/github.com/kiran/arbiter
-    working_dir: /go/src/github.com/kiran/arbiter
+      RAW_TICKS_TOPIC: ${RAW_TICKS_COINBASE_TOPIC:-raw.ticks.coinbase}
+      NORMALIZED_TICKS_TOPIC: ${NORMALIZED_TICKS_TOPIC:-normalized.ticks}
+      KAFKA_GROUP_ID: ${NORMALIZER_COINBASE_GROUP_ID:-arbiter-normalizer}
+      KAFKA_START_OFFSET: ${NORMALIZER_START_OFFSET:-latest}
     command: ["sh","-c","go run ./cmd/normalizer"]
 
   normalizer-kraken-dev:
-    image: golang:1.20
-    depends_on:
-      - kafka
+    <<: *go-dev-service
+    restart: unless-stopped
     environment:
       KAFKA_BROKERS: kafka:9092
-      RAW_TICKS_TOPIC: raw.ticks.kraken
-      NORMALIZED_TICKS_TOPIC: normalized.ticks
-      KAFKA_GROUP_ID: arbiter-normalizer-kraken
-    volumes:
-      - ./:/go/src/github.com/kiran/arbiter
-    working_dir: /go/src/github.com/kiran/arbiter
+      RAW_TICKS_TOPIC: ${RAW_TICKS_KRAKEN_TOPIC:-raw.ticks.kraken}
+      NORMALIZED_TICKS_TOPIC: ${NORMALIZED_TICKS_TOPIC:-normalized.ticks}
+      KAFKA_GROUP_ID: ${NORMALIZER_KRAKEN_GROUP_ID:-arbiter-normalizer-kraken}
+      KAFKA_START_OFFSET: ${NORMALIZER_START_OFFSET:-latest}
     command: ["sh","-c","go run ./cmd/normalizer"]
 
   detector-dev:
-    image: golang:1.20
-    depends_on:
-      - kafka
+    <<: *go-dev-service
+    restart: unless-stopped
     environment:
       KAFKA_BROKERS: kafka:9092
-      NORMALIZED_TICKS_TOPIC: normalized.ticks
-      SIGNALS_TOPIC: arbitrage.signals
-      KAFKA_GROUP_ID: arbiter-detector
-    volumes:
-      - ./:/go/src/github.com/kiran/arbiter
-    working_dir: /go/src/github.com/kiran/arbiter
+      NORMALIZED_TICKS_TOPIC: ${NORMALIZED_TICKS_TOPIC:-normalized.ticks}
+      SIGNALS_TOPIC: ${SIGNALS_TOPIC:-arbitrage.signals}
+      KAFKA_GROUP_ID: ${DETECTOR_GROUP_ID:-arbiter-detector}
+      KAFKA_START_OFFSET: ${DETECTOR_START_OFFSET:-latest}
     command: ["sh","-c","go run ./cmd/detector"]

@@ -65,6 +65,10 @@ type krakenTickerMessage struct {
 	Data    []krakenTickerPayload `json:"data"`
 }
 
+type serviceConfig struct {
+	debug bool
+}
+
 func kafkaBrokers() []string {
 	brokers := os.Getenv("KAFKA_BROKERS")
 	if brokers == "" {
@@ -93,6 +97,20 @@ func envOrDefault(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch value {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func parseExchangeTime(value string) *timestamppb.Timestamp {
@@ -145,7 +163,7 @@ func publishTicker(ctx context.Context, writer *kafka.Writer, payload []byte, ti
 	})
 }
 
-func consumeKrakenFeed(writer *kafka.Writer, feedURL, symbol string) error {
+func consumeKrakenFeed(cfg serviceConfig, writer *kafka.Writer, feedURL, symbol string) error {
 	conn, _, err := websocket.DefaultDialer.Dial(feedURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial websocket: %w", err)
@@ -177,7 +195,9 @@ func consumeKrakenFeed(writer *kafka.Writer, feedURL, symbol string) error {
 
 		var envelope krakenEnvelope
 		if err := json.Unmarshal(payload, &envelope); err != nil {
-			log.Printf("skipping unreadable message: %v", err)
+			if cfg.debug {
+				log.Printf("skipping unreadable message: %v", err)
+			}
 			continue
 		}
 
@@ -195,7 +215,9 @@ func consumeKrakenFeed(writer *kafka.Writer, feedURL, symbol string) error {
 
 		var tickerMessage krakenTickerMessage
 		if err := json.Unmarshal(payload, &tickerMessage); err != nil {
-			log.Printf("skipping malformed ticker message: %v", err)
+			if cfg.debug {
+				log.Printf("skipping malformed ticker message: %v", err)
+			}
 			continue
 		}
 
@@ -207,13 +229,15 @@ func consumeKrakenFeed(writer *kafka.Writer, feedURL, symbol string) error {
 				return fmt.Errorf("publish ticker to kafka: %w", err)
 			}
 
-			log.Printf(
-				"published raw tick exchange=%s symbol=%s bid=%0.2f ask=%0.2f",
-				"kraken",
-				tick.Symbol,
-				tick.Bid,
-				tick.Ask,
-			)
+			if cfg.debug {
+				log.Printf(
+					"published raw tick exchange=%s symbol=%s bid=%0.2f ask=%0.2f",
+					"kraken",
+					tick.Symbol,
+					tick.Bid,
+					tick.Ask,
+				)
+			}
 		}
 	}
 }
@@ -222,6 +246,9 @@ func main() {
 	feedURL := envOrDefault("KRAKEN_WS_URL", defaultKrakenFeedURL)
 	symbol := envOrDefault("KRAKEN_SYMBOL", defaultKrakenSymbol)
 	topic := envOrDefault("RAW_TICKS_TOPIC", defaultKafkaTopic)
+	cfg := serviceConfig{
+		debug: boolEnv("INGESTOR_DEBUG", false),
+	}
 
 	writer := kafka.NewWriter(kafka.WriterConfig{
 		Brokers:  kafkaBrokers(),
@@ -234,7 +261,7 @@ func main() {
 
 	backoff := initialReconnectBackoff
 	for {
-		if err := consumeKrakenFeed(writer, feedURL, symbol); err != nil {
+		if err := consumeKrakenFeed(cfg, writer, feedURL, symbol); err != nil {
 			log.Printf("ingestor loop ended: %v", err)
 		}
 
