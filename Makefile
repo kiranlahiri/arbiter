@@ -2,8 +2,8 @@ SHELL := /bin/bash
 
 .PHONY: help up up-minimal down logs logs-follow gen-protos create-topics-dev \
 create-topics-live \
-run-producer run-consumer run-ingestor-coinbase run-ingestor-kraken run-normalizer run-detector \
-compose-run-producer compose-run-consumer compose-run-ingestor-coinbase compose-run-ingestor-kraken compose-run-normalizer compose-run-normalizer-kraken compose-run-detector \
+run-producer run-consumer run-signal-consumer run-ingestor-coinbase run-ingestor-kraken run-normalizer run-detector \
+compose-run-producer compose-run-consumer compose-run-signal-consumer compose-run-ingestor-coinbase compose-run-ingestor-kraken compose-run-normalizer compose-run-normalizer-kraken compose-run-detector \
 compose-up-dev compose-down-dev compose-up-pipeline compose-down-pipeline logs-pipeline \
 compose-up-pipeline-live compose-down-pipeline-live logs-pipeline-live
 
@@ -23,6 +23,7 @@ help:
 	@echo "  run-detector      Run the detector locally"
 	@echo "  compose-run-producer  Run producer inside compose network (one-off)"
 	@echo "  compose-run-consumer  Run consumer inside compose network (one-off)"
+	@echo "  compose-run-signal-consumer  Run signal consumer inside compose network (one-off)"
 	@echo "  compose-run-ingestor-coinbase  Run Coinbase ingestor inside compose network (one-off)"
 	@echo "  compose-run-ingestor-kraken  Run Kraken ingestor inside compose network (one-off)"
 	@echo "  compose-run-normalizer  Run normalizer inside compose network (one-off)"
@@ -76,6 +77,9 @@ compose-run-producer:
 compose-run-consumer:
 	docker compose run --rm consumer-dev
 
+compose-run-signal-consumer:
+	docker compose run --rm signal-consumer-dev
+
 compose-run-ingestor-coinbase:
 	docker compose run --rm ingestor-coinbase-dev
 
@@ -119,6 +123,9 @@ compose-down-dev:
 ## Run examples locally (requires Go installed locally)
 run-consumer:
 	go run ./cmd/consumer
+
+run-signal-consumer:
+	go run ./cmd/signal-consumer
 
 run-producer:
 	go run ./cmd/producer

@@ -69,6 +69,14 @@ services:
       KAFKA_GROUP_ID: ${CONSUMER_GROUP_ID:-arbiter-consumer}
     command: ["sh","-c","go run ./cmd/consumer"]
 
+  signal-consumer-dev:
+    <<: *go-dev-service
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      SIGNALS_TOPIC: ${SIGNALS_TOPIC:-arbitrage.signals}
+      KAFKA_GROUP_ID: ${SIGNAL_CONSUMER_GROUP_ID:-arbiter-signal-consumer}
+    command: ["sh","-c","go run ./cmd/signal-consumer"]
+
   producer-dev:
     <<: *go-dev-service
     environment:
