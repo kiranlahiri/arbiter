@@ -268,6 +268,34 @@ Useful environment variables:
 - `MIN_SIGNAL_INTERVAL_MS` default: `500`
 - `DETECTOR_DEBUG` default: `false`
 
+### 10. Run the signal consumer
+
+This is a friendlier way to watch detected opportunities than reading the merged pipeline logs.
+
+Inside the Compose network:
+
+```bash
+make compose-run-signal-consumer
+```
+
+Or directly on your host:
+
+```bash
+go run ./cmd/signal-consumer
+```
+
+Useful environment variables:
+
+- `KAFKA_BROKERS` default: `localhost:9092`
+- `SIGNALS_TOPIC` default: `arbitrage.signals`
+- `KAFKA_GROUP_ID` default: `arbiter-signal-consumer`
+
+Example output:
+
+```text
+2026-04-20T21:33:41Z | BTC-USD | buy coinbase @ 75983.34 | sell kraken @ 75990.24 | spread 6.90 | profit 6.90 | latency 4855ms
+```
+
 The sample apps use `KAFKA_BROKERS` when set.
 
 - Host default: `localhost:9092`
@@ -291,6 +319,7 @@ make logs
 make logs-follow
 make gen-protos
 make compose-run-consumer
+make compose-run-signal-consumer
 make compose-run-producer
 make compose-run-ingestor-coinbase
 make compose-run-ingestor-kraken
