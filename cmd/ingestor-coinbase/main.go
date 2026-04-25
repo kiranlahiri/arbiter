@@ -173,6 +173,12 @@ func consumeCoinbaseFeed(cfg serviceConfig, writer *kafka.Writer, topic, feedURL
 
 	log.Printf("connected to Coinbase feed %s and subscribed to %s", feedURL, productID)
 
+	var (
+		lastReceivedAt time.Time
+		lastBid        string
+		lastAsk        string
+	)
+
 	for {
 		_, payload, err := conn.ReadMessage()
 		if err != nil {
@@ -216,14 +222,28 @@ func consumeCoinbaseFeed(cfg serviceConfig, writer *kafka.Writer, topic, feedURL
 			}
 
 			if cfg.debug {
+				sinceLastMs := int64(0)
+				if !lastReceivedAt.IsZero() {
+					sinceLastMs = receivedAt.Sub(lastReceivedAt).Milliseconds()
+				}
+				bidChanged := tickerMsg.BestBid != lastBid
+				askChanged := tickerMsg.BestAsk != lastAsk
 				log.Printf(
-					"published raw tick exchange=%s product=%s bid=%s ask=%s",
+					"published raw tick exchange=%s product=%s bid=%s ask=%s received_at=%s since_last_ms=%d bid_changed=%t ask_changed=%t",
 					"coinbase",
 					tickerMsg.ProductID,
 					tickerMsg.BestBid,
 					tickerMsg.BestAsk,
+					receivedAt.Format(time.RFC3339Nano),
+					sinceLastMs,
+					bidChanged,
+					askChanged,
 				)
 			}
+
+			lastReceivedAt = receivedAt
+			lastBid = tickerMsg.BestBid
+			lastAsk = tickerMsg.BestAsk
 		default:
 			// Coinbase sends other message types too. Ignore them until we need them.
 			continue

@@ -185,6 +185,13 @@ func consumeKrakenFeed(cfg serviceConfig, writer *kafka.Writer, feedURL, symbol 
 
 	log.Printf("connected to Kraken feed %s and subscribed to %s", feedURL, symbol)
 
+	var (
+		lastReceivedAt time.Time
+		lastBid        float64
+		lastAsk        float64
+		haveLastQuote  bool
+	)
+
 	for {
 		_, payload, err := conn.ReadMessage()
 		if err != nil {
@@ -230,14 +237,29 @@ func consumeKrakenFeed(cfg serviceConfig, writer *kafka.Writer, feedURL, symbol 
 			}
 
 			if cfg.debug {
+				sinceLastMs := int64(0)
+				if !lastReceivedAt.IsZero() {
+					sinceLastMs = receivedAt.Sub(lastReceivedAt).Milliseconds()
+				}
+				bidChanged := !haveLastQuote || tick.Bid != lastBid
+				askChanged := !haveLastQuote || tick.Ask != lastAsk
 				log.Printf(
-					"published raw tick exchange=%s symbol=%s bid=%0.2f ask=%0.2f",
+					"published raw tick exchange=%s symbol=%s bid=%0.2f ask=%0.2f received_at=%s since_last_ms=%d bid_changed=%t ask_changed=%t",
 					"kraken",
 					tick.Symbol,
 					tick.Bid,
 					tick.Ask,
+					receivedAt.Format(time.RFC3339Nano),
+					sinceLastMs,
+					bidChanged,
+					askChanged,
 				)
 			}
+
+			lastReceivedAt = receivedAt
+			lastBid = tick.Bid
+			lastAsk = tick.Ask
+			haveLastQuote = true
 		}
 	}
 }
