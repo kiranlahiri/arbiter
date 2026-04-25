@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arbiter Live Signals</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="orb orb-a"></div>
+      <div class="orb orb-b"></div>
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Arbiter</p>
+          <p class="hero-text">
+            Recent BTC opportunities across Coinbase and Kraken, backed by persisted
+            signals and a live WebSocket stream.
+          </p>
+        </div>
+        <div class="status-panel">
+          <div class="status-row">
+            <span class="status-label">API</span>
+            <span id="api-status" class="pill pill-muted">Checking</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Stream</span>
+            <span id="ws-status" class="pill pill-muted">Connecting</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Updated</span>
+            <span id="last-updated" class="status-value">Waiting</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="stats-grid" aria-label="Signal summary">
+        <article class="stat-card">
+          <p class="stat-label">Latest Route</p>
+          <p id="stat-route" class="stat-value">-</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-label">Best Spread</p>
+          <p id="stat-best-spread" class="stat-value">-</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-label">Latest Quote Gap</p>
+          <p id="stat-latest-gap" class="stat-value">-</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-label">Oldest Quote Age</p>
+          <p id="stat-oldest-age" class="stat-value">-</p>
+        </article>
+      </section>
+
+      <section class="feed-panel">
+        <div class="panel-header">
+          <p class="panel-eyebrow">Signal Feed</p>
+          <div class="panel-note">
+            REST hydrates the table, WebSocket prepends new rows.
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Symbol</th>
+                <th>Route</th>
+                <th>Spread</th>
+                <th>Profit</th>
+                <th>Quote Gap</th>
+                <th>Buy Age</th>
+                <th>Sell Age</th>
+                <th>Oldest Age</th>
+              </tr>
+            </thead>
+            <tbody id="signals-body">
+              <tr class="placeholder-row">
+                <td colspan="9">Loading recent signals...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-actions">
+          <button id="load-more-button" class="load-more-button" type="button">Load Older Signals</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
