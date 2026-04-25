@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,11 +49,41 @@ func envOrDefault(key, fallback string) string {
 	return value
 }
 
+func startOffsetEnv(key string, fallback int64) int64 {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch value {
+	case "", "latest":
+		return fallback
+	case "first", "earliest":
+		return kafka.FirstOffset
+	default:
+		return fallback
+	}
+}
+
 func formatTimestamp(ts time.Time) string {
 	if ts.IsZero() {
 		return "unknown"
 	}
-	return ts.Format(time.RFC3339)
+	return ts.Format(time.RFC3339Nano)
+}
+
+func metadataInt64(metadata map[string]string, key string) int64 {
+	if metadata == nil {
+		return 0
+	}
+
+	value := strings.TrimSpace(metadata[key])
+	if value == "" {
+		return 0
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0
+	}
+
+	return parsed
 }
 
 func main() {
@@ -60,13 +91,14 @@ func main() {
 	topic := envOrDefault("SIGNALS_TOPIC", defaultSignalsTopic)
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: kafkaBrokers(),
-		GroupID: groupID,
-		Topic:   topic,
+		Brokers:     kafkaBrokers(),
+		GroupID:     groupID,
+		Topic:       topic,
+		StartOffset: startOffsetEnv("KAFKA_START_OFFSET", kafka.LastOffset),
 	})
 	defer reader.Close()
 
-	fmt.Printf("signal consumer subscribed to %s, waiting for opportunities...\n", topic)
+	fmt.Printf("signal consumer subscribed to %s with group %s, waiting for opportunities...\n", topic, groupID)
 
 	ctx := context.Background()
 	for {
@@ -83,8 +115,16 @@ func main() {
 		}
 
 		opportunityAt := signal.GetTimestampOpportunity().AsTime()
+		quoteGapMs := metadataInt64(signal.GetMetadata(), "quote_gap_ms")
+		buyQuoteAgeMs := metadataInt64(signal.GetMetadata(), "buy_quote_age_ms")
+		sellQuoteAgeMs := metadataInt64(signal.GetMetadata(), "sell_quote_age_ms")
+		oldestQuoteAgeMs := metadataInt64(signal.GetMetadata(), "oldest_quote_age_ms")
+		if oldestQuoteAgeMs == 0 {
+			// Older signals may only carry the legacy ingest_to_detect_ms field.
+			oldestQuoteAgeMs = metadataInt64(signal.GetMetadata(), "ingest_to_detect_ms")
+		}
 		fmt.Printf(
-			"%s | %s | buy %s @ %.2f | sell %s @ %.2f | spread %.2f | profit %.2f | latency %dms\n",
+			"%s | %s | buy %s @ %.2f | sell %s @ %.2f | spread %.2f | profit %.2f | quote gap %dms | oldest quote age %dms | buy age %dms | sell age %dms\n",
 			formatTimestamp(opportunityAt),
 			signal.GetSymbol(),
 			signal.GetBuyExchange(),
@@ -93,7 +133,10 @@ func main() {
 			signal.GetSellPrice(),
 			signal.GetSpread(),
 			signal.GetFeeAdjustedProfit(),
-			signal.GetLatencyMs(),
+			quoteGapMs,
+			oldestQuoteAgeMs,
+			buyQuoteAgeMs,
+			sellQuoteAgeMs,
 		)
 	}
 }

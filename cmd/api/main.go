@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -24,6 +26,9 @@ const (
 	pollInterval        = time.Second
 	writeWait           = 5 * time.Second
 )
+
+//go:embed web/*
+var webAssets embed.FS
 
 var websocketUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -136,6 +141,20 @@ func signalsLimitFromRequest(r *http.Request) int {
 	return limit
 }
 
+func beforeIDFromRequest(r *http.Request) int64 {
+	raw := strings.TrimSpace(r.URL.Query().Get("before_id"))
+	if raw == "" {
+		return 0
+	}
+
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return 0
+	}
+
+	return value
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -199,7 +218,11 @@ func scanSignal(rows pgxRows) (signalRecord, error) {
 }
 
 func (s *apiServer) fetchSignals(ctx context.Context, limit int) ([]signalRecord, error) {
-	rows, err := s.pool.Query(ctx, `
+	return s.fetchSignalsBeforeID(ctx, limit, 0)
+}
+
+func (s *apiServer) fetchSignalsBeforeID(ctx context.Context, limit int, beforeID int64) ([]signalRecord, error) {
+	query := `
 SELECT
     id,
     symbol,
@@ -218,9 +241,17 @@ SELECT
     metadata,
     inserted_at
 FROM signals
-ORDER BY timestamp_opportunity DESC, id DESC
-LIMIT $1
-`, limit)
+`
+	args := []any{}
+	if beforeID > 0 {
+		query += "WHERE id < $1\n"
+		args = append(args, beforeID)
+	}
+	query += "ORDER BY timestamp_opportunity DESC, id DESC\n"
+	query += "LIMIT $" + strconv.Itoa(len(args)+1)
+	args = append(args, limit)
+
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -299,10 +330,11 @@ func (s *apiServer) signalsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := signalsLimitFromRequest(r)
+	beforeID := beforeIDFromRequest(r)
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	signals, err := s.fetchSignals(ctx, limit)
+	signals, err := s.fetchSignalsBeforeID(ctx, limit, beforeID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
 			"error": "failed to query signals",
@@ -311,9 +343,10 @@ func (s *apiServer) signalsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"signals": signals,
-		"count":   len(signals),
-		"limit":   limit,
+		"signals":   signals,
+		"count":     len(signals),
+		"limit":     limit,
+		"before_id": beforeID,
 	})
 }
 
@@ -400,10 +433,16 @@ func main() {
 
 	go server.streamNewSignals(ctx)
 
+	staticFS, err := fs.Sub(webAssets, "web")
+	if err != nil {
+		log.Fatalf("failed to load embedded web assets: %v", err)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", server.healthHandler)
 	mux.HandleFunc("/signals", server.signalsHandler)
 	mux.HandleFunc("/ws/signals", server.websocketSignalsHandler)
+	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
 	log.Printf("starting api address=%s database=%s", address, databaseURL)
 	if err := http.ListenAndServe(address, mux); err != nil {
