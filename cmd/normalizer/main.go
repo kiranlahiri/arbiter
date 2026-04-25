@@ -27,6 +27,12 @@ type serviceConfig struct {
 	logEveryN int
 }
 
+type quoteSnapshot struct {
+	receivedAt time.Time
+	bid        float64
+	ask        float64
+}
+
 func kafkaBrokers() []string {
 	brokers := os.Getenv("KAFKA_BROKERS")
 	if brokers == "" {
@@ -183,6 +189,7 @@ func main() {
 
 	ctx := context.Background()
 	processedCount := 0
+	lastByExchangeSymbol := map[string]quoteSnapshot{}
 	for {
 		message, err := reader.ReadMessage(ctx)
 		if err != nil {
@@ -217,13 +224,40 @@ func main() {
 
 		processedCount++
 		if cfg.debug {
+			ingestorReceivedAt := normalizedTick.GetTimestampReceived().AsTime()
+			normalizeLagMs := int64(0)
+			if !ingestorReceivedAt.IsZero() {
+				normalizeLagMs = normalizedTick.GetTimestampNormalized().AsTime().Sub(ingestorReceivedAt).Milliseconds()
+			}
+
+			key := normalizedTick.GetExchange() + "|" + normalizedTick.GetSymbol()
+			lastSnapshot, hadLastSnapshot := lastByExchangeSymbol[key]
+			sinceLastMs := int64(0)
+			if hadLastSnapshot && !lastSnapshot.receivedAt.IsZero() && !ingestorReceivedAt.IsZero() {
+				sinceLastMs = ingestorReceivedAt.Sub(lastSnapshot.receivedAt).Milliseconds()
+			}
+			bidChanged := !hadLastSnapshot || normalizedTick.GetBid() != lastSnapshot.bid
+			askChanged := !hadLastSnapshot || normalizedTick.GetAsk() != lastSnapshot.ask
+
 			log.Printf(
-				"published normalized tick exchange=%s symbol=%s bid=%0.2f ask=%0.2f",
+				"published normalized tick exchange=%s symbol=%s bid=%0.2f ask=%0.2f ingestor_received_at=%s normalized_at=%s ingest_to_normalize_ms=%d since_last_ms=%d bid_changed=%t ask_changed=%t",
 				normalizedTick.GetExchange(),
 				normalizedTick.GetSymbol(),
 				normalizedTick.GetBid(),
 				normalizedTick.GetAsk(),
+				ingestorReceivedAt.Format(time.RFC3339Nano),
+				normalizedTick.GetTimestampNormalized().AsTime().Format(time.RFC3339Nano),
+				normalizeLagMs,
+				sinceLastMs,
+				bidChanged,
+				askChanged,
 			)
+
+			lastByExchangeSymbol[key] = quoteSnapshot{
+				receivedAt: ingestorReceivedAt,
+				bid:        normalizedTick.GetBid(),
+				ask:        normalizedTick.GetAsk(),
+			}
 			continue
 		}
 

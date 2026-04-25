@@ -20,6 +20,7 @@ const (
 	defaultSignalsTopic      = "arbitrage.signals"
 	defaultDetectorGroupID   = "arbiter-detector"
 	defaultMaxQuoteAge       = 5 * time.Second
+	defaultMaxQuoteGap       = 500 * time.Millisecond
 	defaultMinSignalInterval = 500 * time.Millisecond
 )
 
@@ -30,6 +31,7 @@ type quote struct {
 	ask               float64
 	timestampExchange *timestamppb.Timestamp
 	timestampReceived time.Time
+	timestampNormalized time.Time
 	sequenceID        string
 	rawTopic          string
 	metadata          map[string]string
@@ -41,6 +43,7 @@ type detector struct {
 	minProfit         float64
 	feeBps            float64
 	maxQuoteAge       time.Duration
+	maxQuoteGap       time.Duration
 	minSignalInterval time.Duration
 	debug             bool
 	quotesBySymbol    map[string]map[string]quote
@@ -158,6 +161,7 @@ func newDetector(writer *kafka.Writer, signalsTopic string) *detector {
 		minProfit:         floatEnv("MIN_SIGNAL_PROFIT", 0),
 		feeBps:            floatEnv("FEE_BPS", 0),
 		maxQuoteAge:       durationMsEnv("MAX_QUOTE_AGE_MS", defaultMaxQuoteAge),
+		maxQuoteGap:       durationMsEnv("MAX_QUOTE_GAP_MS", defaultMaxQuoteGap),
 		minSignalInterval: durationMsEnv("MIN_SIGNAL_INTERVAL_MS", defaultMinSignalInterval),
 		debug:             boolEnv("DETECTOR_DEBUG", false),
 		quotesBySymbol:    map[string]map[string]quote{},
@@ -165,8 +169,16 @@ func newDetector(writer *kafka.Writer, signalsTopic string) *detector {
 	}
 }
 
+func absDuration(value time.Duration) time.Duration {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
 func (d *detector) updateQuote(tick *pb.NormalizedTick, processedAt time.Time) quote {
 	receivedAt := timestampOrFallback(tick.GetTimestampReceived(), processedAt)
+	normalizedAt := timestampOrFallback(tick.GetTimestampNormalized(), processedAt)
 	newQuote := quote{
 		exchange:          tick.GetExchange(),
 		symbol:            tick.GetSymbol(),
@@ -174,6 +186,7 @@ func (d *detector) updateQuote(tick *pb.NormalizedTick, processedAt time.Time) q
 		ask:               tick.GetAsk(),
 		timestampExchange: tick.GetTimestampExchange(),
 		timestampReceived: receivedAt,
+		timestampNormalized: normalizedAt,
 		sequenceID:        tick.GetSourceSequenceId(),
 		rawTopic:          tick.GetRawTopic(),
 		metadata:          cloneMetadata(tick.GetMetadata()),
@@ -283,7 +296,25 @@ func (d *detector) emitSignal(symbol string, buyQuote, sellQuote quote, now time
 	}
 
 	tickReceivedAt := olderTime(buyQuote.timestampReceived, sellQuote.timestampReceived)
-	latencyMs := now.Sub(tickReceivedAt).Milliseconds()
+	tickNormalizedAt := olderTime(buyQuote.timestampNormalized, sellQuote.timestampNormalized)
+	quoteGapMs := absDuration(buyQuote.timestampReceived.Sub(sellQuote.timestampReceived)).Milliseconds()
+	buyQuoteAgeMs := now.Sub(buyQuote.timestampReceived).Milliseconds()
+	sellQuoteAgeMs := now.Sub(sellQuote.timestampReceived).Milliseconds()
+	quoteAgeMs := now.Sub(tickReceivedAt).Milliseconds()
+	normalizeToDetectMs := now.Sub(tickNormalizedAt).Milliseconds()
+	if quoteGapMs > d.maxQuoteGap.Milliseconds() {
+		if d.debug {
+			log.Printf(
+				"skipping signal symbol=%s buy=%s sell=%s reason=quote_gap quote_gap_ms=%d max_quote_gap_ms=%d",
+				symbol,
+				buyQuote.exchange,
+				sellQuote.exchange,
+				quoteGapMs,
+				d.maxQuoteGap.Milliseconds(),
+			)
+		}
+		return nil
+	}
 
 	signal := &pb.Signal{
 		Symbol:                symbol,
@@ -295,15 +326,28 @@ func (d *detector) emitSignal(symbol string, buyQuote, sellQuote quote, now time
 		FeeAdjustedProfit:     feeAdjustedProfit,
 		TimestampOpportunity:  timestamppb.New(now),
 		TimestampTickReceived: timestamppb.New(tickReceivedAt),
-		LatencyMs:             latencyMs,
+		LatencyMs:             quoteAgeMs,
 		Metadata: map[string]string{
-			"buy_raw_topic":         buyQuote.rawTopic,
-			"sell_raw_topic":        sellQuote.rawTopic,
-			"buy_sequence_id":       buyQuote.sequenceID,
-			"sell_sequence_id":      sellQuote.sequenceID,
-			"buy_tick_received_at":  buyQuote.timestampReceived.Format(time.RFC3339Nano),
-			"sell_tick_received_at": sellQuote.timestampReceived.Format(time.RFC3339Nano),
+			"buy_raw_topic":           buyQuote.rawTopic,
+			"sell_raw_topic":          sellQuote.rawTopic,
+			"buy_sequence_id":         buyQuote.sequenceID,
+			"sell_sequence_id":        sellQuote.sequenceID,
+			"buy_tick_received_at":    buyQuote.timestampReceived.Format(time.RFC3339Nano),
+			"sell_tick_received_at":   sellQuote.timestampReceived.Format(time.RFC3339Nano),
+			"buy_quote_age_ms":        strconv.FormatInt(buyQuoteAgeMs, 10),
+			"sell_quote_age_ms":       strconv.FormatInt(sellQuoteAgeMs, 10),
+			"oldest_quote_age_ms":     strconv.FormatInt(quoteAgeMs, 10),
+			"signal_emit_age_ms":      strconv.FormatInt(quoteAgeMs, 10),
+			"quote_gap_ms":            strconv.FormatInt(quoteGapMs, 10),
+			"normalize_to_detect_ms":  strconv.FormatInt(normalizeToDetectMs, 10),
+			"oldest_quote_exchange":   buyQuote.exchange,
+			"newest_quote_exchange":   sellQuote.exchange,
 		},
+	}
+
+	if sellQuote.timestampReceived.Before(buyQuote.timestampReceived) {
+		signal.Metadata["oldest_quote_exchange"] = sellQuote.exchange
+		signal.Metadata["newest_quote_exchange"] = buyQuote.exchange
 	}
 
 	encoded, err := proto.Marshal(signal)
@@ -325,13 +369,13 @@ func (d *detector) emitSignal(symbol string, buyQuote, sellQuote quote, now time
 
 	d.lastSignalAt[key] = now
 	log.Printf(
-		"published signal symbol=%s buy=%s sell=%s spread=%0.2f fee_adjusted=%0.2f latency_ms=%d",
+		"published signal symbol=%s buy=%s sell=%s spread=%0.2f fee_adjusted=%0.2f quote_age_ms=%d",
 		symbol,
 		buyQuote.exchange,
 		sellQuote.exchange,
 		spread,
 		feeAdjustedProfit,
-		latencyMs,
+		quoteAgeMs,
 	)
 
 	return nil
@@ -419,13 +463,48 @@ func main() {
 			break
 		}
 
+		if d.debug {
+			log.Printf(
+				"received kafka message topic=%s partition=%d offset=%d key=%s bytes=%d",
+				message.Topic,
+				message.Partition,
+				message.Offset,
+				string(message.Key),
+				len(message.Value),
+			)
+		}
+
+		processedAt := time.Now().UTC()
+
 		var tick pb.NormalizedTick
 		if err := proto.Unmarshal(message.Value, &tick); err != nil {
-			log.Printf("failed to unmarshal normalized tick: %v", err)
+			log.Printf(
+				"failed to unmarshal normalized tick topic=%s partition=%d offset=%d err=%v",
+				message.Topic,
+				message.Partition,
+				message.Offset,
+				err,
+			)
 			continue
 		}
 
-		if err := d.processTick(&tick, time.Now().UTC()); err != nil {
+		if d.debug {
+			ingestToDetectMs := processedAt.Sub(tick.GetTimestampReceived().AsTime()).Milliseconds()
+			normalizeToDetectMs := processedAt.Sub(tick.GetTimestampNormalized().AsTime()).Milliseconds()
+			log.Printf(
+				"decoded normalized tick exchange=%s symbol=%s bid=%0.2f ask=%0.2f received_at=%s normalized_at=%s ingest_to_detect_ms=%d normalize_to_detect_ms=%d",
+				tick.GetExchange(),
+				tick.GetSymbol(),
+				tick.GetBid(),
+				tick.GetAsk(),
+				tick.GetTimestampReceived().AsTime().Format(time.RFC3339Nano),
+				tick.GetTimestampNormalized().AsTime().Format(time.RFC3339Nano),
+				ingestToDetectMs,
+				normalizeToDetectMs,
+			)
+		}
+
+		if err := d.processTick(&tick, processedAt); err != nil {
 			log.Printf("detector processing error: %v", err)
 		}
 	}
