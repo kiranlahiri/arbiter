@@ -1,9 +1,10 @@
 volumes:
   go-mod-cache:
   go-build-cache:
+  postgres-data:
 
 x-go-dev-service: &go-dev-service
-  image: golang:1.20
+  image: golang:1.23
   depends_on:
     - kafka
   volumes:
@@ -19,7 +20,7 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "2181:2181"
+      - "${ZOOKEEPER_PORT:-2181}:2181"
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
@@ -38,7 +39,23 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     ports:
-      - "9092:9092"
+      - "${KAFKA_HOST_PORT:-9092}:9092"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-arbiter}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-arbiter}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.4.0
@@ -49,7 +66,7 @@ services:
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
     ports:
-      - "8081:8081"
+      - "${SCHEMA_REGISTRY_PORT:-8081}:8081"
 
   kafdrop:
     image: obsidiandynamics/kafdrop:latest
@@ -58,7 +75,7 @@ services:
     environment:
       KAFKA_BROKERCONNECT: "kafka:9092"
     ports:
-      - "9000:9000"
+      - "${KAFDROP_PORT:-9000}:9000"
 
   # Development helpers: run the Go producer/consumer inside the compose network
   consumer-dev:
@@ -132,4 +149,31 @@ services:
       SIGNALS_TOPIC: ${SIGNALS_TOPIC:-arbitrage.signals}
       KAFKA_GROUP_ID: ${DETECTOR_GROUP_ID:-arbiter-detector}
       KAFKA_START_OFFSET: ${DETECTOR_START_OFFSET:-latest}
+      MAX_QUOTE_GAP_MS: ${MAX_QUOTE_GAP_MS:-500}
     command: ["sh","-c","go run ./cmd/detector"]
+
+  signal-writer-dev:
+    <<: *go-dev-service
+    depends_on:
+      - kafka
+      - postgres
+    restart: unless-stopped
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      SIGNALS_TOPIC: ${SIGNALS_TOPIC:-arbitrage.signals}
+      KAFKA_GROUP_ID: ${SIGNAL_WRITER_GROUP_ID:-arbiter-signal-writer}
+      KAFKA_START_OFFSET: ${SIGNAL_WRITER_START_OFFSET:-latest}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/arbiter?sslmode=disable}
+    command: ["sh","-c","go run ./cmd/signal-writer"]
+
+  api-dev:
+    <<: *go-dev-service
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    environment:
+      API_ADDRESS: ${API_ADDRESS:-:8080}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/arbiter?sslmode=disable}
+    ports:
+      - "${API_HOST_PORT:-8080}:8080"
+    command: ["sh","-c","go run ./cmd/api"]
