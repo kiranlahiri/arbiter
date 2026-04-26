@@ -1,0 +1,139 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "${ZOOKEEPER_PORT:-2181}:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:${KAFKA_HOST_PORT:-9092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    ports:
+      - "${KAFKA_HOST_PORT:-9092}:9092"
+
+  ingestor-coinbase:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CMD_PATH: ./cmd/ingestor-coinbase
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      RAW_TICKS_TOPIC: ${RAW_TICKS_COINBASE_TOPIC:-raw.ticks.coinbase}
+      COINBASE_PRODUCT_ID: ${COINBASE_PRODUCT_ID:-BTC-USD}
+
+  ingestor-kraken:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CMD_PATH: ./cmd/ingestor-kraken
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      RAW_TICKS_TOPIC: ${RAW_TICKS_KRAKEN_TOPIC:-raw.ticks.kraken}
+      KRAKEN_SYMBOL: ${KRAKEN_SYMBOL:-BTC/USD}
+
+  normalizer-coinbase:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CMD_PATH: ./cmd/normalizer
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      RAW_TICKS_TOPIC: ${RAW_TICKS_COINBASE_TOPIC:-raw.ticks.coinbase}
+      NORMALIZED_TICKS_TOPIC: ${NORMALIZED_TICKS_TOPIC:-normalized.ticks}
+      KAFKA_GROUP_ID: ${NORMALIZER_COINBASE_GROUP_ID:-arbiter-normalizer}
+      KAFKA_START_OFFSET: ${NORMALIZER_START_OFFSET:-latest}
+
+  normalizer-kraken:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CMD_PATH: ./cmd/normalizer
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      RAW_TICKS_TOPIC: ${RAW_TICKS_KRAKEN_TOPIC:-raw.ticks.kraken}
+      NORMALIZED_TICKS_TOPIC: ${NORMALIZED_TICKS_TOPIC:-normalized.ticks}
+      KAFKA_GROUP_ID: ${NORMALIZER_KRAKEN_GROUP_ID:-arbiter-normalizer-kraken}
+      KAFKA_START_OFFSET: ${NORMALIZER_START_OFFSET:-latest}
+
+  detector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CMD_PATH: ./cmd/detector
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      NORMALIZED_TICKS_TOPIC: ${NORMALIZED_TICKS_TOPIC:-normalized.ticks}
+      SIGNALS_TOPIC: ${SIGNALS_TOPIC:-arbitrage.signals}
+      KAFKA_GROUP_ID: ${DETECTOR_GROUP_ID:-arbiter-detector}
+      KAFKA_START_OFFSET: ${DETECTOR_START_OFFSET:-latest}
+      MAX_QUOTE_AGE_MS: ${MAX_QUOTE_AGE_MS:-5000}
+      MAX_QUOTE_GAP_MS: ${MAX_QUOTE_GAP_MS:-500}
+      MIN_SIGNAL_INTERVAL_MS: ${MIN_SIGNAL_INTERVAL_MS:-500}
+      MIN_SIGNAL_PROFIT: ${MIN_SIGNAL_PROFIT:-0}
+      FEE_BPS: ${FEE_BPS:-0}
+
+  signal-writer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CMD_PATH: ./cmd/signal-writer
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      SIGNALS_TOPIC: ${SIGNALS_TOPIC:-arbitrage.signals}
+      KAFKA_GROUP_ID: ${SIGNAL_WRITER_GROUP_ID:-arbiter-signal-writer}
+      KAFKA_START_OFFSET: ${SIGNAL_WRITER_START_OFFSET:-latest}
+      DATABASE_URL: ${DATABASE_URL}
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CMD_PATH: ./cmd/api
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      API_ADDRESS: ${API_ADDRESS:-:8080}
+      DATABASE_URL: ${DATABASE_URL}
+    ports:
+      - "${API_HOST_PORT:-8080}:8080"

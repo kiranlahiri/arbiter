@@ -1,11 +1,23 @@
 SHELL := /bin/bash
 
+LIVE_RAW_TICKS_COINBASE_TOPIC ?= raw.ticks.coinbase.live
+LIVE_RAW_TICKS_KRAKEN_TOPIC ?= raw.ticks.kraken.live
+LIVE_NORMALIZED_TICKS_TOPIC ?= normalized.ticks.live
+LIVE_SIGNALS_TOPIC ?= arbitrage.signals.live
+LIVE_NORMALIZER_COINBASE_GROUP_ID ?= arbiter-normalizer-live
+LIVE_NORMALIZER_KRAKEN_GROUP_ID ?= arbiter-normalizer-kraken-live
+LIVE_DETECTOR_GROUP_ID ?= arbiter-detector-live
+LIVE_NORMALIZER_START_OFFSET ?= latest
+LIVE_DETECTOR_START_OFFSET ?= latest
+LIVE_MAX_QUOTE_GAP_MS ?= 5000
+
 .PHONY: help up up-minimal down logs logs-follow gen-protos create-topics-dev \
 create-topics-live \
 run-producer run-consumer run-signal-consumer run-ingestor-coinbase run-ingestor-kraken run-normalizer run-detector \
-compose-run-producer compose-run-consumer compose-run-signal-consumer compose-run-ingestor-coinbase compose-run-ingestor-kraken compose-run-normalizer compose-run-normalizer-kraken compose-run-detector \
+run-signal-writer run-api \
+compose-run-producer compose-run-consumer compose-run-signal-consumer compose-run-ingestor-coinbase compose-run-ingestor-kraken compose-run-normalizer compose-run-normalizer-kraken compose-run-detector compose-run-signal-writer compose-run-api \
 compose-up-dev compose-down-dev compose-up-pipeline compose-down-pipeline logs-pipeline \
-compose-up-pipeline-live compose-down-pipeline-live logs-pipeline-live
+compose-up-pipeline-live compose-up-pipeline-live-fresh compose-down-pipeline-live logs-pipeline-live
 
 help:
 	@echo "Makefile targets:"
@@ -29,14 +41,22 @@ help:
 	@echo "  compose-run-normalizer  Run normalizer inside compose network (one-off)"
 	@echo "  compose-run-normalizer-kraken  Run Kraken normalizer inside compose network (one-off)"
 	@echo "  compose-run-detector  Run detector inside compose network (one-off)"
+	@echo "  compose-run-signal-writer  Run signal writer inside compose network (one-off)"
+	@echo "  compose-run-api  Run API inside compose network (one-off)"
 	@echo "  compose-up-dev    Launch producer-dev and consumer-dev as background services"
-	@echo "  compose-up-pipeline Start both ingestors, both normalizers, and detector as long-lived services"
+	@echo "  compose-up-pipeline Start ingestors, normalizers, detector, Postgres, signal writer, and API as long-lived services"
 	@echo "  compose-down-pipeline Stop the long-lived pipeline services"
 	@echo "  logs-pipeline     Follow logs for the live pipeline services"
 	@echo "  compose-up-pipeline-live Start the pipeline against isolated live-validation topics"
+	@echo "  compose-up-pipeline-live-fresh Start the live-validation pipeline with fresh consumer groups automatically"
 	@echo "  compose-down-pipeline-live Stop the isolated live-validation pipeline"
 	@echo "  logs-pipeline-live Follow logs for the isolated live-validation pipeline"
 	@echo "  compose-down-dev  Stop background dev services"
+	@echo "  Example fresh live restart:"
+	@echo "    LIVE_NORMALIZER_COINBASE_GROUP_ID=arbiter-normalizer-live-$$(date +%s) \\"
+	@echo "    LIVE_NORMALIZER_KRAKEN_GROUP_ID=arbiter-normalizer-kraken-live-$$(date +%s) \\"
+	@echo "    LIVE_DETECTOR_GROUP_ID=arbiter-detector-live-$$(date +%s) \\"
+	@echo "    make compose-up-pipeline-live"
 
 ## Start minimal infra
 up-minimal:
@@ -95,27 +115,50 @@ compose-run-normalizer-kraken:
 compose-run-detector:
 	docker compose run --rm detector-dev
 
+compose-run-signal-writer:
+	docker compose run --rm signal-writer-dev
+
+compose-run-api:
+	docker compose run --rm api-dev
+
 ## Bring up dev services in background
 compose-up-dev:
 	docker compose up -d consumer-dev producer-dev
 
 compose-up-pipeline:
-	docker compose up -d ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev
+	docker compose up -d postgres ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev
 
 compose-down-pipeline:
-	docker compose stop ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev || true
+	docker compose stop ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres || true
 
 logs-pipeline:
-	docker compose logs -f --tail=200 ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev
+	docker compose logs -f --tail=200 ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres
 
 compose-up-pipeline-live:
-	RAW_TICKS_COINBASE_TOPIC=raw.ticks.coinbase.live RAW_TICKS_KRAKEN_TOPIC=raw.ticks.kraken.live NORMALIZED_TICKS_TOPIC=normalized.ticks.live SIGNALS_TOPIC=arbitrage.signals.live NORMALIZER_COINBASE_GROUP_ID=arbiter-normalizer-live NORMALIZER_KRAKEN_GROUP_ID=arbiter-normalizer-kraken-live DETECTOR_GROUP_ID=arbiter-detector-live docker compose up -d ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev
+	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) NORMALIZER_COINBASE_GROUP_ID=$(LIVE_NORMALIZER_COINBASE_GROUP_ID) NORMALIZER_KRAKEN_GROUP_ID=$(LIVE_NORMALIZER_KRAKEN_GROUP_ID) DETECTOR_GROUP_ID=$(LIVE_DETECTOR_GROUP_ID) SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live SIGNAL_WRITER_START_OFFSET=latest NORMALIZER_START_OFFSET=$(LIVE_NORMALIZER_START_OFFSET) DETECTOR_START_OFFSET=$(LIVE_DETECTOR_START_OFFSET) MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) docker compose up -d postgres ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev
+
+compose-up-pipeline-live-fresh:
+	@RUN_ID=$$(date +%s); \
+	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) \
+	RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) \
+	NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) \
+	SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) \
+	NORMALIZER_COINBASE_GROUP_ID=arbiter-normalizer-live-$$RUN_ID \
+	NORMALIZER_KRAKEN_GROUP_ID=arbiter-normalizer-kraken-live-$$RUN_ID \
+	DETECTOR_GROUP_ID=arbiter-detector-live-$$RUN_ID \
+	SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live \
+	SIGNAL_WRITER_START_OFFSET=latest \
+	NORMALIZER_START_OFFSET=latest \
+	DETECTOR_START_OFFSET=latest \
+	MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) \
+	docker compose up -d postgres ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev; \
+	echo "Started live pipeline with RUN_ID=$$RUN_ID"
 
 compose-down-pipeline-live:
-	RAW_TICKS_COINBASE_TOPIC=raw.ticks.coinbase.live RAW_TICKS_KRAKEN_TOPIC=raw.ticks.kraken.live NORMALIZED_TICKS_TOPIC=normalized.ticks.live SIGNALS_TOPIC=arbitrage.signals.live NORMALIZER_COINBASE_GROUP_ID=arbiter-normalizer-live NORMALIZER_KRAKEN_GROUP_ID=arbiter-normalizer-kraken-live DETECTOR_GROUP_ID=arbiter-detector-live docker compose stop ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev || true
+	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) NORMALIZER_COINBASE_GROUP_ID=$(LIVE_NORMALIZER_COINBASE_GROUP_ID) NORMALIZER_KRAKEN_GROUP_ID=$(LIVE_NORMALIZER_KRAKEN_GROUP_ID) DETECTOR_GROUP_ID=$(LIVE_DETECTOR_GROUP_ID) SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live SIGNAL_WRITER_START_OFFSET=latest NORMALIZER_START_OFFSET=$(LIVE_NORMALIZER_START_OFFSET) DETECTOR_START_OFFSET=$(LIVE_DETECTOR_START_OFFSET) MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) docker compose stop ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres || true
 
 logs-pipeline-live:
-	RAW_TICKS_COINBASE_TOPIC=raw.ticks.coinbase.live RAW_TICKS_KRAKEN_TOPIC=raw.ticks.kraken.live NORMALIZED_TICKS_TOPIC=normalized.ticks.live SIGNALS_TOPIC=arbitrage.signals.live NORMALIZER_COINBASE_GROUP_ID=arbiter-normalizer-live NORMALIZER_KRAKEN_GROUP_ID=arbiter-normalizer-kraken-live DETECTOR_GROUP_ID=arbiter-detector-live docker compose logs -f --tail=200 ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev
+	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) NORMALIZER_COINBASE_GROUP_ID=$(LIVE_NORMALIZER_COINBASE_GROUP_ID) NORMALIZER_KRAKEN_GROUP_ID=$(LIVE_NORMALIZER_KRAKEN_GROUP_ID) DETECTOR_GROUP_ID=$(LIVE_DETECTOR_GROUP_ID) SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live SIGNAL_WRITER_START_OFFSET=latest NORMALIZER_START_OFFSET=$(LIVE_NORMALIZER_START_OFFSET) DETECTOR_START_OFFSET=$(LIVE_DETECTOR_START_OFFSET) MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) docker compose logs -f --tail=200 ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres
 
 compose-down-dev:
 	docker compose stop consumer-dev producer-dev || true
@@ -141,3 +184,9 @@ run-normalizer:
 
 run-detector:
 	go run ./cmd/detector
+
+run-signal-writer:
+	go run ./cmd/signal-writer
+
+run-api:
+	go run ./cmd/api

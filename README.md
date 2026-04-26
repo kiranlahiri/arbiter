@@ -1,83 +1,158 @@
 # Arbiter
 
-Arbiter is a Go-based streaming market-data project for detecting cross-exchange arbitrage opportunities in near real time.
+Arbiter is a real-time arbitrage signal monitoring platform built in Go. It ingests live BTC quotes from Coinbase and Kraken, normalizes them into a shared schema, detects cross-exchange spreads, persists emitted signals to Postgres, and serves them through a JSON API and live dashboard.
 
-The long-term architecture is:
+The current system is intentionally narrow:
 
-`exchange feeds -> ingestors -> Kafka -> normalizer -> detector -> signals -> WebSocket/REST API`
+- one asset: `BTC-USD`
+- two exchanges: Coinbase and Kraken
+- one product surface: live signal monitoring
 
-Right now, this repository contains the early foundation for that pipeline:
+That scope is deliberate. The goal of this version is not breadth. The goal is to produce a polished, interview-ready end-to-end system that demonstrates distributed streaming, persistence, live delivery, and clear operational tradeoffs.
 
-- Protobuf schemas for raw ticks, normalized ticks, and arbitrage signals
-- Generated Go bindings for those schemas
-- A local Kafka development stack using Docker Compose
-- A Coinbase WebSocket ingestor that publishes `RawTick` messages to Kafka
-- A Kraken WebSocket ingestor that publishes `RawTick` messages to Kafka
-- A normalizer service that converts `RawTick` messages into `NormalizedTick`
-- A detector service that tracks latest quotes by symbol/exchange and emits `Signal` messages when spreads qualify
-- Example Go producer and consumer apps that exchange `NormalizedTick` messages
-- Local developer docs and Make targets for common workflows
+## What It Does
+
+- subscribes to live exchange WebSocket feeds
+- publishes raw ticks into Kafka
+- normalizes exchange-specific messages into a common format
+- detects cross-exchange arbitrage opportunities
+- persists signals into Postgres
+- exposes recent history through `GET /signals`
+- pushes new signals live over `WS /ws/signals`
+- renders a dashboard at `GET /`
+
+## Architecture
+
+```text
+Coinbase WS ----> ingestor-coinbase ----\
+                                         \
+                                          > raw Kafka topics ---> normalizers ---> normalized.ticks ---> detector ---> arbitrage.signals ---> signal-writer ---> Postgres
+                                         /
+Kraken WS ------> ingestor-kraken ------/
+
+Postgres ---> API ---> Dashboard
+                 \
+                  ---> WebSocket live stream
+```
+
+Current pipeline stages:
+
+- `ingestor-coinbase`
+- `ingestor-kraken`
+- `normalizer`
+- `detector`
+- `signal-writer`
+- `api`
+
+## Configuration
+
+Use [.env.example](.env.example) as the starting point for local overrides:
+
+```bash
+cp .env.example .env
+```
+
+The project has two config modes:
+
+- local live validation with fresh consumer groups
+- deployed long-running services with stable consumer groups
+
+That separation is important. Fresh groups are useful for local tailing, but deployment should use stable group identities.
+
+For a VM deployment, use [.env.production.example](.env.production.example) as the starting point instead.
+
+## Why Kafka
+
+This project is best described as a small distributed streaming system, not a worker-pool compute cluster.
+
+Kafka is useful here because it gives each stage:
+
+- a clean boundary between responsibilities
+- independent restart behavior
+- durable event flow between services
+- a realistic distributed-system shape for interview discussion
+
+It also introduces real tradeoffs:
+
+- more operational complexity
+- more opportunities for consumer-group / backlog issues during local development
+- higher end-to-end latency than an in-process hot path
+
+Those tradeoffs are part of the project story, not something hidden from it.
+
+## Current Product Surface
+
+The dashboard shows:
+
+- recent arbitrage signals
+- buy and sell venues
+- spread
+- quote gap
+- buy age / sell age
+- oldest quote age
+- live status for API and stream connectivity
+
+The API currently exposes:
+
+- `GET /`
+- `GET /health`
+- `GET /signals?limit=50`
+- `GET /signals?limit=50&before_id=<id>`
+- `WS /ws/signals`
 
 ## Current Status
 
-This repo is currently in the scaffold stage.
-
 Implemented:
 
-- Kafka + Schema Registry local stack
-- Protobuf message contracts
-- Coinbase ticker-feed ingestor for one product
-- Kraken ticker-feed ingestor for one product
-- Kafka normalizer from raw to normalized ticks
-- Detector state machine for multi-exchange spread checks
-- Example producer/consumer path
-- Environment-based Kafka broker configuration
+- live Coinbase and Kraken ingestion
+- Kafka-backed normalization and detection pipeline
+- Postgres-backed signal persistence
+- API for recent signal history
+- WebSocket live signal delivery
+- embedded dashboard served from the API
+- local Docker Compose environment for the full stack
 
-Not implemented yet:
+Not in scope for this version:
 
-- real exchange ingestors
-- normalization service
-- arbitrage detector
-- signal API
-- Redis / TimescaleDB
+- order execution
+- more exchanges and assets
+- user accounts or auth
+- Kubernetes
 - Prometheus / Grafana
-- Kubernetes deployment
 
 ## Tech Stack
 
 - Go
 - Kafka
 - Protobuf
+- PostgreSQL
 - Docker Compose
 - `segmentio/kafka-go`
-- Schema Registry
-- Kafdrop
-
-Planned later:
-
-- Redis
-- TimescaleDB
-- Prometheus
-- Grafana
-- Kubernetes
+- `jackc/pgx`
+- Gorilla WebSocket
 
 ## Repository Layout
 
 ```text
 cmd/
-  consumer/     Example Kafka consumer for NormalizedTick messages
-  detector/     Arbitrage detector consuming NormalizedTick and producing Signal
-  ingestor-coinbase/ Coinbase WebSocket ingestor publishing RawTick messages
-  ingestor-kraken/ Kraken WebSocket ingestor publishing RawTick messages
-  normalizer/   Kafka normalizer from RawTick to NormalizedTick
-  producer/     Example Kafka producer for NormalizedTick messages
+  api/               HTTP API + embedded dashboard
+  consumer/          Example Kafka consumer
+  detector/          Arbitrage detector
+  ingestor-coinbase/ Coinbase WebSocket ingestor
+  ingestor-kraken/   Kraken WebSocket ingestor
+  normalizer/        RawTick -> NormalizedTick transformer
+  producer/          Example Kafka producer
+  signal-consumer/   Human-readable signal stream reader
+  signal-writer/     Kafka consumer that persists Signal rows to Postgres
 docs/
+  detector_debugging_notes.md
+  deployment.md
   local_kafka_reference.md
   summary_for_codex.md
 proto/
   common.proto
-  raw_tick.proto
   normalized_tick.proto
+  raw_tick.proto
   signal.proto
 scripts/
   generate_protos.sh
@@ -85,221 +160,134 @@ docker-compose.yml
 Makefile
 ```
 
-## Getting Started
+## Local Run
 
-### 1. Start the local stack
+### 1. Start infrastructure
 
 ```bash
 make up-minimal
+make create-topics-dev
 ```
 
-Or start the full stack including Kafdrop:
+Or start the full local stack:
 
 ```bash
 make up
 ```
 
-### 2. Generate protobuf bindings
+### 2. Start the long-lived pipeline
 
-```bash
-make gen-protos
-```
-
-This requires `protoc` and `protoc-gen-go`.
-
-### 3. Create the local Kafka topics
-
-```bash
-make create-topics-dev
-```
-
-### 4. Start the live pipeline
-
-The most reliable local dev workflow is to run the pipeline as long-lived Compose services:
+For ordinary local development:
 
 ```bash
 make compose-up-pipeline
 make logs-pipeline
 ```
 
-This keeps the ingestors, normalizers, and detector alive continuously, which avoids stale-data issues caused by short-lived startup churn.
+### 3. Start a clean live-validation run
 
-Stop the live pipeline with:
-
-```bash
-make compose-down-pipeline
-```
-
-For the cleanest arbitrage validation, use the isolated live-topic workflow so old topic history does not pollute the detector:
+For the cleanest live view, use isolated `.live` topics and fresh consumer groups:
 
 ```bash
+export RUN_ID=$(date +%s)
+export LIVE_NORMALIZER_COINBASE_GROUP_ID=arbiter-normalizer-live-$RUN_ID
+export LIVE_NORMALIZER_KRAKEN_GROUP_ID=arbiter-normalizer-kraken-live-$RUN_ID
+export LIVE_DETECTOR_GROUP_ID=arbiter-detector-live-$RUN_ID
+export LIVE_NORMALIZER_START_OFFSET=latest
+export LIVE_DETECTOR_START_OFFSET=latest
+export LIVE_MAX_QUOTE_GAP_MS=5000
+
 make create-topics-live
 make compose-up-pipeline-live
 make logs-pipeline-live
 ```
 
-Stop that isolated validation pipeline with:
+Or use the helper target that generates fresh normalizer and detector groups automatically:
+
+```bash
+make compose-up-pipeline-live-fresh
+```
+
+Then open:
+
+- dashboard: `http://localhost:8080/`
+- API health: `http://localhost:8080/health`
+- recent signals: `http://localhost:8080/signals?limit=10`
+
+Stop the pipeline with:
 
 ```bash
 make compose-down-pipeline-live
 ```
 
-### 5. Run the example consumer and producer
+## Postgres Defaults
 
-The Compose-network path is the recommended dev workflow.
+Local Compose defaults:
 
-Inside the Compose network:
+- host port: `5433`
+- database: `arbiter`
+- username: `postgres`
+- password: `postgres`
+- connection string:
+  `postgres://postgres:postgres@localhost:5433/arbiter?sslmode=disable`
 
-```bash
-make compose-run-consumer
-make compose-run-producer
-```
+The `signal-writer` service creates the `signals` table automatically and deduplicates writes by Kafka topic, partition, and offset.
 
-Or directly on your host:
+## Freshness And Signal Semantics
 
-```bash
-go run ./cmd/consumer
-go run ./cmd/producer
-```
+The signal stream intentionally surfaces timing metadata alongside spread data:
 
-### 6. Run the Coinbase ingestor
+- `quote_gap_ms`
+- `buy_quote_age_ms`
+- `sell_quote_age_ms`
+- `oldest_quote_age_ms`
 
-The Compose-network path is the recommended dev workflow.
+These fields matter because a spread is only meaningful if the contributing quotes are recent enough and close enough together in time.
 
-Inside the Compose network:
+Important nuance:
 
-```bash
-make compose-run-ingestor-coinbase
-```
+- `quote_gap_ms` is the temporal distance between the buy and sell quotes
+- `oldest_quote_age_ms` is the age of the older contributing quote at emission time
+- `oldest_quote_age_ms` is not a fixed pipeline-latency metric
 
-Or directly on your host if your local Kafka listener setup matches the host-run configuration:
+That distinction became a central part of the debugging process and is documented in [detector_debugging_notes.md](docs/detector_debugging_notes.md).
 
-```bash
-go run ./cmd/ingestor-coinbase
-```
+## Deployment Plan
 
-Useful environment variables:
+The intended first deployment is intentionally simple:
 
-- `KAFKA_BROKERS` default: `localhost:9092`
-- `KAFKA_TOPIC` default: `normalized.ticks`
-- `KAFKA_GROUP_ID` default: `arbiter-consumer`
-- `RAW_TICKS_TOPIC` default: `raw.ticks.coinbase`
-- `COINBASE_PRODUCT_ID` default: `BTC-USD`
-- `COINBASE_WS_URL` default: `wss://ws-feed.exchange.coinbase.com`
-- `INGESTOR_DEBUG` default: `false`
+- one VM running Docker Compose for Kafka and the Go pipeline services
+- managed Postgres
+- API serving both JSON endpoints and the dashboard
+- production service images built from `Dockerfile`
+- hosted runtime defined in `docker-compose.production.yml`
 
-### 7. Run the Kraken ingestor
+Production deployment strategy:
 
-The Compose-network path is the recommended dev workflow.
+- stable consumer groups for long-running services
+- managed Postgres connection through `DATABASE_URL`
+- documented restart policy
+- no fresh random group IDs on every restart
 
-Inside the Compose network:
+Local development and deployment differ on purpose:
 
-```bash
-make compose-run-ingestor-kraken
-```
+- local live validation prefers fresh consumer groups to avoid backlog ambiguity
+- deployed systems should run continuously with stable group identities
 
-Or directly on your host if your local Kafka listener setup matches the host-run configuration:
+More detailed notes live in [deployment.md](docs/deployment.md).
+There is also a concrete [deployment checklist](docs/deployment_checklist.md) for the first VM deployment.
 
-```bash
-go run ./cmd/ingestor-kraken
-```
+## Operator Notes
 
-Useful environment variables:
+Kafka retains messages and consumer groups retain offsets, so local restarts can accidentally drain old backlog instead of tailing fresh data.
 
-- `KAFKA_BROKERS` default: `localhost:9092`
-- `RAW_TICKS_TOPIC` default: `raw.ticks.kraken`
-- `KRAKEN_SYMBOL` default: `BTC/USD`
-- `KRAKEN_WS_URL` default: `wss://ws.kraken.com/v2`
-- `INGESTOR_DEBUG` default: `false`
+For a clean local live run, prefer:
 
-### 8. Run the normalizer
+- `.live` topics
+- fresh consumer groups
+- `latest` start offsets
 
-The Compose-network path is the recommended dev workflow.
-
-Inside the Compose network:
-
-```bash
-make compose-run-normalizer
-make compose-run-normalizer-kraken
-```
-
-Or directly on your host if your local Kafka listener setup matches the host-run configuration:
-
-```bash
-go run ./cmd/normalizer
-```
-
-Useful environment variables:
-
-- `KAFKA_BROKERS` default: `localhost:9092`
-- `RAW_TICKS_TOPIC` default: `raw.ticks.coinbase`
-- `NORMALIZED_TICKS_TOPIC` default: `normalized.ticks`
-- `KAFKA_GROUP_ID` default: `arbiter-normalizer`
-- `NORMALIZER_DEBUG` default: `false`
-- `NORMALIZER_LOG_EVERY_N` default: `25`
-
-Use the same normalizer binary with `RAW_TICKS_TOPIC=raw.ticks.kraken` and a different consumer group for Kraken.
-
-### 9. Run the detector
-
-The Compose-network path is the recommended dev workflow.
-
-Inside the Compose network:
-
-```bash
-make compose-run-detector
-```
-
-Or directly on your host if your local Kafka listener setup matches the host-run configuration:
-
-```bash
-go run ./cmd/detector
-```
-
-Useful environment variables:
-
-- `KAFKA_BROKERS` default: `localhost:9092`
-- `NORMALIZED_TICKS_TOPIC` default: `normalized.ticks`
-- `SIGNALS_TOPIC` default: `arbitrage.signals`
-- `KAFKA_GROUP_ID` default: `arbiter-detector`
-- `FEE_BPS` default: `0`
-- `MIN_SIGNAL_PROFIT` default: `0`
-- `MAX_QUOTE_AGE_MS` default: `5000`
-- `MIN_SIGNAL_INTERVAL_MS` default: `500`
-- `DETECTOR_DEBUG` default: `false`
-
-### 10. Run the signal consumer
-
-This is a friendlier way to watch detected opportunities than reading the merged pipeline logs.
-
-Inside the Compose network:
-
-```bash
-make compose-run-signal-consumer
-```
-
-Or directly on your host:
-
-```bash
-go run ./cmd/signal-consumer
-```
-
-Useful environment variables:
-
-- `KAFKA_BROKERS` default: `localhost:9092`
-- `SIGNALS_TOPIC` default: `arbitrage.signals`
-- `KAFKA_GROUP_ID` default: `arbiter-signal-consumer`
-
-Example output:
-
-```text
-2026-04-20T21:33:41Z | BTC-USD | buy coinbase @ 75983.34 | sell kraken @ 75990.24 | spread 6.90 | profit 6.90 | latency 4855ms
-```
-
-The sample apps use `KAFKA_BROKERS` when set.
-
-- Host default: `localhost:9092`
-- Compose helper containers: `kafka:9092`
+If the detector appears quiet, check whether the pipeline is consuming stale retained data before assuming the detection logic is broken.
 
 ## Common Commands
 
@@ -314,60 +302,31 @@ make compose-down-pipeline
 make compose-down-pipeline-live
 make logs-pipeline
 make logs-pipeline-live
-make down
-make logs
-make logs-follow
-make gen-protos
-make compose-run-consumer
 make compose-run-signal-consumer
-make compose-run-producer
-make compose-run-ingestor-coinbase
-make compose-run-ingestor-kraken
-make compose-run-normalizer
-make compose-run-normalizer-kraken
-make compose-run-detector
+make compose-run-api
+make down
 ```
-
-## Topics And Message Flow
-
-The intended topic design is:
-
-- `raw.ticks.binance`
-- `raw.ticks.coinbase`
-- `raw.ticks.kraken`
-- `normalized.ticks`
-- `arbitrage.signals`
-
-At the moment, the example apps only use:
-
-- `raw.ticks.coinbase`
-- `raw.ticks.kraken`
-- `normalized.ticks`
-- `arbitrage.signals`
 
 ## Documentation
 
-- [Project overview and plan](docs/summary_for_codex.md)
+- [Detector debugging notes](docs/detector_debugging_notes.md)
+- [Deployment notes](docs/deployment.md)
+- [Deployment checklist](docs/deployment_checklist.md)
 - [Local Kafka reference](docs/local_kafka_reference.md)
+- [Project planning notes](docs/summary_for_codex.md)
 
 ## Roadmap
 
-Near-term plan:
+Near-term:
 
-1. Build one real exchange ingestor.
-2. Validate live cross-exchange signals between Coinbase and Kraken.
-3. Add a live demo surface with WebSocket or REST.
-4. Add more exchanges and symbol normalization rules.
-5. Persist signals and latency metrics.
+1. deployment polish
+2. API docs surface
+3. README screenshots
+4. environment cleanup for hosted deployment
 
-Longer-term plan:
+Later:
 
-1. Add Redis and TimescaleDB.
-2. Add health checks and metrics.
-3. Add Prometheus and Grafana dashboards.
-4. Package each stage as an independently deployable service.
-5. Move from local Compose development to Kubernetes deployment.
-
-## Notes
-
-This project is being developed incrementally. The current goal is to prove one narrow end-to-end slice before expanding into the full multi-exchange architecture.
+1. more exchanges and assets
+2. metrics / observability
+3. deeper history exploration and analytics
+4. more formal deployment packaging

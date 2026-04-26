@@ -1,0 +1,14 @@
+.git
+.gitignore
+.codex
+.env
+.env.*
+!.env.example
+!.env.production.example
+tmp
+.tmp
+bin
+dist
+build
+coverage.out
+*.log
