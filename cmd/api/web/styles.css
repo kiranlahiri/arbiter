@@ -1,15 +1,15 @@
 :root {
-  --bg: #1f2a36;
-  --bg-deep: #16202a;
-  --panel: rgba(34, 46, 59, 0.9);
-  --panel-strong: rgba(40, 54, 69, 0.96);
-  --ink: #edf4fb;
-  --muted: #9eb0c1;
-  --line: rgba(255, 255, 255, 0.1);
-  --accent: #58c4dd;
-  --accent-soft: rgba(88, 196, 221, 0.16);
-  --accent-hot: #ffb562;
-  --shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  --bg: #0b1110;
+  --bg-deep: #070b0b;
+  --panel: rgba(10, 18, 15, 0.96);
+  --panel-strong: rgba(12, 22, 18, 0.98);
+  --ink: #8aff9d;
+  --muted: #5dad70;
+  --line: rgba(138, 255, 157, 0.18);
+  --accent: #8aff9d;
+  --accent-soft: rgba(138, 255, 157, 0.12);
+  --accent-hot: #c6ff84;
+  --shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
 }
 
 * {
@@ -20,8 +20,12 @@ body {
   margin: 0;
   min-height: 100vh;
   color: var(--ink);
-  background: linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
-  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  background:
+    linear-gradient(rgba(138, 255, 157, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(138, 255, 157, 0.02) 1px, transparent 1px),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+  font-family: "Courier New", Courier, monospace;
 }
 
 .page-shell {
@@ -33,9 +37,9 @@ body {
 
 .orb {
   position: absolute;
-  border-radius: 999px;
-  filter: blur(16px);
-  opacity: 0.6;
+  border-radius: 0;
+  filter: blur(24px);
+  opacity: 0.28;
   pointer-events: none;
 }
 
@@ -44,7 +48,7 @@ body {
   height: 180px;
   top: 48px;
   right: 40px;
-  background: rgba(88, 196, 221, 0.08);
+  background: rgba(138, 255, 157, 0.08);
 }
 
 .orb-b {
@@ -52,7 +56,7 @@ body {
   height: 220px;
   left: -48px;
   top: 240px;
-  background: rgba(255, 181, 98, 0.06);
+  background: rgba(138, 255, 157, 0.05);
 }
 
 .hero,
@@ -60,6 +64,22 @@ body {
 .stat-card {
   position: relative;
   z-index: 1;
+}
+
+.brand-banner {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 18px;
+}
+
+.brand-mark {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(2.6rem, 4vw, 4.2rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(138, 255, 157, 0.08);
 }
 
 .hero {
@@ -74,11 +94,29 @@ body {
 .status-panel,
 .feed-panel,
 .stat-card {
-  backdrop-filter: blur(14px);
   background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-copy::before,
+.status-panel::before,
+.feed-panel::before,
+.stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(138, 255, 157, 0.04) 0%,
+    transparent 14%,
+    transparent 86%,
+    rgba(138, 255, 157, 0.025) 100%
+  );
+  pointer-events: none;
 }
 
 .hero-copy {
@@ -90,7 +128,7 @@ body {
 .stat-label {
   margin: 0 0 8px;
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   font-size: 0.73rem;
   color: var(--muted);
 }
@@ -98,7 +136,7 @@ body {
 h1,
 h2 {
   margin: 0;
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  font-family: "Courier New", Courier, monospace;
   line-height: 1.02;
 }
 
@@ -119,7 +157,7 @@ h2 {
   display: grid;
   gap: 16px;
   align-content: center;
-  background: linear-gradient(180deg, var(--panel-strong), rgba(29, 40, 52, 0.96));
+  background: linear-gradient(180deg, var(--panel-strong), rgba(7, 13, 10, 0.98));
 }
 
 .status-row {
@@ -144,24 +182,25 @@ h2 {
   justify-content: center;
   min-width: 88px;
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: 4px;
   font-weight: 600;
   font-size: 0.82rem;
+  border: 1px solid var(--line);
 }
 
 .pill-live {
-  color: #d8f7ff;
-  background: rgba(88, 196, 221, 0.2);
+  color: var(--ink);
+  background: rgba(138, 255, 157, 0.12);
 }
 
 .pill-muted {
-  color: #d4dde6;
-  background: rgba(158, 176, 193, 0.15);
+  color: #b2e6bd;
+  background: rgba(138, 255, 157, 0.08);
 }
 
 .pill-warn {
-  color: #fff0dc;
-  background: rgba(255, 181, 98, 0.18);
+  color: #e3ffad;
+  background: rgba(198, 255, 132, 0.12);
 }
 
 .stats-grid {
@@ -173,6 +212,7 @@ h2 {
 
 .stat-card {
   padding: 22px 20px;
+  min-height: 108px;
 }
 
 .stat-value {
@@ -197,14 +237,17 @@ h2 {
 .panel-note {
   color: var(--muted);
   font-size: 0.92rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .table-wrap {
   overflow: auto;
   max-height: 640px;
-  border-radius: 22px;
+  border-radius: 4px;
   border: 1px solid var(--line);
-  background: rgba(18, 26, 35, 0.42);
+  background: rgba(6, 11, 9, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(138, 255, 157, 0.04);
 }
 
 table {
@@ -215,32 +258,40 @@ table {
 
 thead th {
   text-align: left;
-  padding: 14px 16px;
-  font-size: 0.79rem;
+  padding: 12px 16px;
+  font-size: 0.76rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  background: rgba(31, 43, 56, 0.96);
+  letter-spacing: 0.14em;
+  color: var(--ink);
+  background: rgba(12, 20, 16, 0.98);
   border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 tbody td {
-  padding: 14px 16px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
+  font-size: 0.93rem;
 }
 
 tbody tr {
   transition: background 180ms ease;
 }
 
+tbody tr:nth-child(even) {
+  background: rgba(138, 255, 157, 0.02);
+}
+
 tbody tr:hover {
-  background: rgba(88, 196, 221, 0.08);
+  background: rgba(138, 255, 157, 0.06);
 }
 
 .route {
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
 .route strong {
@@ -270,20 +321,22 @@ tbody tr:hover {
 }
 
 .load-more-button {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(88, 196, 221, 0.12);
+  border: 1px solid var(--line);
+  background: rgba(138, 255, 157, 0.08);
   color: var(--ink);
-  border-radius: 999px;
+  border-radius: 4px;
   padding: 11px 16px;
   font: inherit;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   cursor: pointer;
   transition: transform 160ms ease, background 160ms ease;
 }
 
 .load-more-button:hover {
   transform: translateY(-1px);
-  background: rgba(88, 196, 221, 0.18);
+  background: rgba(138, 255, 157, 0.14);
 }
 
 .load-more-button:disabled {
@@ -310,7 +363,7 @@ tbody tr:hover {
   .hero-copy,
   .status-panel,
   .feed-panel {
-    border-radius: 22px;
+    border-radius: 4px;
   }
 
   .hero-copy,

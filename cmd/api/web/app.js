@@ -69,7 +69,6 @@ function rowMarkup(signal) {
       <td>${signal.symbol}</td>
       <td>${routeMarkup(signal)}</td>
       <td class="metric-hot">$${formatMoney(signal.spread)}</td>
-      <td class="metric-hot">$${formatMoney(signal.fee_adjusted_profit)}</td>
       <td class="metric-cool">${formatMs(signal.quote_gap_ms)}</td>
       <td>${formatMs(signal.buy_quote_age_ms)}</td>
       <td>${formatMs(signal.sell_quote_age_ms)}</td>
@@ -82,7 +81,7 @@ function renderSignals() {
   if (state.signals.length === 0) {
     signalsBody.innerHTML = `
       <tr class="placeholder-row">
-        <td colspan="9">No persisted signals yet.</td>
+        <td colspan="8">No persisted signals yet.</td>
       </tr>
     `;
     updateSummary();
@@ -153,7 +152,7 @@ async function loadSignals() {
     console.error(error);
     signalsBody.innerHTML = `
       <tr class="placeholder-row">
-        <td colspan="9">Failed to load signals.</td>
+        <td colspan="8">Failed to load signals.</td>
       </tr>
     `;
   }
