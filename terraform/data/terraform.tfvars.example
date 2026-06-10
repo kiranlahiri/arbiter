@@ -1,0 +1,20 @@
+aws_region  = "us-east-1"
+environment = "dev"
+
+# Copy these from `terraform -chdir=terraform/foundation output`.
+vpc_id = "vpc-0b0665300ecb01ef9"
+private_subnet_ids = [
+  "subnet-03e609c58e39aed0b",
+  "subnet-093f55d628c7b0ad2",
+]
+app_internal_security_group_id = "sg-05b69110d97c64b41"
+
+# Set a strong password before applying.
+db_password = "EKJk6tDuv+;LB@&,#"
+
+# Optional overrides.
+# db_name           = "arbiter"
+# db_username       = "arbiter"
+# db_instance_class = "db.t4g.micro"
+# db_allocated_storage = 20
+# db_multi_az       = false
