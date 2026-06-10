@@ -42,3 +42,11 @@ output "app_internal_security_group_id" {
   description = "Security group ID for internal app traffic."
   value       = aws_security_group.app_internal.id
 }
+
+output "ecr_repository_urls" {
+  description = "ECR repository URLs keyed by service name."
+  value = {
+    for service, repo in aws_ecr_repository.service :
+    service => repo.repository_url
+  }
+}
