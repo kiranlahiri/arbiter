@@ -22,3 +22,33 @@ output "alb_target_group_arn" {
   description = "Target group ARN for the API service."
   value       = aws_lb_target_group.api.arn
 }
+
+output "api_service_name" {
+  description = "ECS service name for the API."
+  value       = aws_ecs_service.api.name
+}
+
+output "signal_writer_service_name" {
+  description = "ECS service name for signal-writer."
+  value       = aws_ecs_service.signal_writer.name
+}
+
+output "api_task_definition_arn" {
+  description = "Task definition ARN for the API service."
+  value       = aws_ecs_task_definition.api.arn
+}
+
+output "database_url_secret_arn" {
+  description = "Secrets Manager ARN for the API DATABASE_URL secret."
+  value       = aws_secretsmanager_secret.database_url.arn
+}
+
+output "database_url_secret_name" {
+  description = "Secrets Manager name for the API DATABASE_URL secret."
+  value       = aws_secretsmanager_secret.database_url.name
+}
+
+output "signal_writer_log_group_name" {
+  description = "CloudWatch log group for the signal-writer service."
+  value       = aws_cloudwatch_log_group.signal_writer.name
+}
