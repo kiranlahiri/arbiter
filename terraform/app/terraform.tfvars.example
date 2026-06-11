@@ -1,0 +1,13 @@
+aws_region  = "us-east-1"
+environment = "dev"
+
+# Copy these from `terraform -chdir=terraform/foundation output`.
+vpc_id = "vpc-xxxxxxxxxxxxxxxxx"
+public_subnet_ids = [
+  "subnet-xxxxxxxxxxxxxxxxx",
+  "subnet-yyyyyyyyyyyyyyyyy",
+]
+public_entry_security_group_id = "sg-xxxxxxxxxxxxxxxxx"
+
+# Optional override.
+# api_container_port = 8080
