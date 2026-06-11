@@ -13,6 +13,20 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!.env.local.example
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+crash.log
 
 # Go build and test artifacts
 bin/
