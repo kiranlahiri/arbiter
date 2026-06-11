@@ -1,5 +1,8 @@
 SHELL := /bin/bash
 
+ENV_FILE ?= .env.local
+COMPOSE := docker compose --env-file $(ENV_FILE)
+
 LIVE_RAW_TICKS_COINBASE_TOPIC ?= raw.ticks.coinbase.live
 LIVE_RAW_TICKS_KRAKEN_TOPIC ?= raw.ticks.kraken.live
 LIVE_NORMALIZED_TICKS_TOPIC ?= normalized.ticks.live
@@ -21,6 +24,7 @@ compose-up-pipeline-live compose-up-pipeline-live-fresh compose-down-pipeline-li
 
 help:
 	@echo "Makefile targets:"
+	@echo "  ENV_FILE=$(ENV_FILE)"
 	@echo "  up-minimal        Start zookeeper, kafka, schema-registry"
 	@echo "  up                Start full dev stack (includes kafdrop)"
 	@echo "  down              Stop and remove all compose services"
@@ -57,85 +61,86 @@ help:
 	@echo "    LIVE_NORMALIZER_KRAKEN_GROUP_ID=arbiter-normalizer-kraken-live-$$(date +%s) \\"
 	@echo "    LIVE_DETECTOR_GROUP_ID=arbiter-detector-live-$$(date +%s) \\"
 	@echo "    make compose-up-pipeline-live"
+	@echo "  Local config file: $(ENV_FILE)"
 
 ## Start minimal infra
 up-minimal:
-	docker compose up -d zookeeper kafka schema-registry
+	$(COMPOSE) up -d zookeeper kafka schema-registry
 
 ## Start full stack (includes UI)
 up:
-	docker compose up -d
+	$(COMPOSE) up -d
 
 down:
-	docker compose down --volumes --remove-orphans
+	$(COMPOSE) down --volumes --remove-orphans
 
 logs:
-	docker compose logs --tail=200 kafka schema-registry zookeeper
+	$(COMPOSE) logs --tail=200 kafka schema-registry zookeeper
 
 logs-follow:
-	docker compose logs -f --tail=200 kafka schema-registry kafdrop
+	$(COMPOSE) logs -f --tail=200 kafka schema-registry kafdrop
 
 gen-protos:
 	./scripts/generate_protos.sh
 
 create-topics-dev:
-	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic raw.ticks.coinbase --partitions 1 --replication-factor 1
-	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic raw.ticks.kraken --partitions 1 --replication-factor 1
-	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic normalized.ticks --partitions 1 --replication-factor 1
-	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic arbitrage.signals --partitions 1 --replication-factor 1
+	$(COMPOSE) exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic raw.ticks.coinbase --partitions 1 --replication-factor 1
+	$(COMPOSE) exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic raw.ticks.kraken --partitions 1 --replication-factor 1
+	$(COMPOSE) exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic normalized.ticks --partitions 1 --replication-factor 1
+	$(COMPOSE) exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic arbitrage.signals --partitions 1 --replication-factor 1
 
 create-topics-live:
-	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic raw.ticks.coinbase.live --partitions 1 --replication-factor 1
-	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic raw.ticks.kraken.live --partitions 1 --replication-factor 1
-	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic normalized.ticks.live --partitions 1 --replication-factor 1
-	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic arbitrage.signals.live --partitions 1 --replication-factor 1
+	$(COMPOSE) exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic raw.ticks.coinbase.live --partitions 1 --replication-factor 1
+	$(COMPOSE) exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic raw.ticks.kraken.live --partitions 1 --replication-factor 1
+	$(COMPOSE) exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic normalized.ticks.live --partitions 1 --replication-factor 1
+	$(COMPOSE) exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic arbitrage.signals.live --partitions 1 --replication-factor 1
 
 ## Run Go examples inside compose network (one-off)
 compose-run-producer:
-	docker compose run --rm producer-dev
+	$(COMPOSE) run --rm producer-dev
 
 compose-run-consumer:
-	docker compose run --rm consumer-dev
+	$(COMPOSE) run --rm consumer-dev
 
 compose-run-signal-consumer:
-	docker compose run --rm signal-consumer-dev
+	$(COMPOSE) run --rm signal-consumer-dev
 
 compose-run-ingestor-coinbase:
-	docker compose run --rm ingestor-coinbase-dev
+	$(COMPOSE) run --rm ingestor-coinbase-dev
 
 compose-run-ingestor-kraken:
-	docker compose run --rm ingestor-kraken-dev
+	$(COMPOSE) run --rm ingestor-kraken-dev
 
 compose-run-normalizer:
-	docker compose run --rm normalizer-dev
+	$(COMPOSE) run --rm normalizer-dev
 
 compose-run-normalizer-kraken:
-	docker compose run --rm normalizer-kraken-dev
+	$(COMPOSE) run --rm normalizer-kraken-dev
 
 compose-run-detector:
-	docker compose run --rm detector-dev
+	$(COMPOSE) run --rm detector-dev
 
 compose-run-signal-writer:
-	docker compose run --rm signal-writer-dev
+	$(COMPOSE) run --rm signal-writer-dev
 
 compose-run-api:
-	docker compose run --rm api-dev
+	$(COMPOSE) run --rm api-dev
 
 ## Bring up dev services in background
 compose-up-dev:
-	docker compose up -d consumer-dev producer-dev
+	$(COMPOSE) up -d consumer-dev producer-dev
 
 compose-up-pipeline:
-	docker compose up -d postgres ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev
+	$(COMPOSE) up -d postgres ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev
 
 compose-down-pipeline:
-	docker compose stop ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres || true
+	$(COMPOSE) stop ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres || true
 
 logs-pipeline:
-	docker compose logs -f --tail=200 ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres
+	$(COMPOSE) logs -f --tail=200 ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres
 
 compose-up-pipeline-live:
-	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) NORMALIZER_COINBASE_GROUP_ID=$(LIVE_NORMALIZER_COINBASE_GROUP_ID) NORMALIZER_KRAKEN_GROUP_ID=$(LIVE_NORMALIZER_KRAKEN_GROUP_ID) DETECTOR_GROUP_ID=$(LIVE_DETECTOR_GROUP_ID) SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live SIGNAL_WRITER_START_OFFSET=latest NORMALIZER_START_OFFSET=$(LIVE_NORMALIZER_START_OFFSET) DETECTOR_START_OFFSET=$(LIVE_DETECTOR_START_OFFSET) MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) docker compose up -d postgres ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev
+	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) NORMALIZER_COINBASE_GROUP_ID=$(LIVE_NORMALIZER_COINBASE_GROUP_ID) NORMALIZER_KRAKEN_GROUP_ID=$(LIVE_NORMALIZER_KRAKEN_GROUP_ID) DETECTOR_GROUP_ID=$(LIVE_DETECTOR_GROUP_ID) SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live SIGNAL_WRITER_START_OFFSET=latest NORMALIZER_START_OFFSET=$(LIVE_NORMALIZER_START_OFFSET) DETECTOR_START_OFFSET=$(LIVE_DETECTOR_START_OFFSET) MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) $(COMPOSE) up -d postgres ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev
 
 compose-up-pipeline-live-fresh:
 	@RUN_ID=$$(date +%s); \
@@ -151,17 +156,17 @@ compose-up-pipeline-live-fresh:
 	NORMALIZER_START_OFFSET=latest \
 	DETECTOR_START_OFFSET=latest \
 	MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) \
-	docker compose up -d postgres ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev; \
+	$(COMPOSE) up -d postgres ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev; \
 	echo "Started live pipeline with RUN_ID=$$RUN_ID"
 
 compose-down-pipeline-live:
-	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) NORMALIZER_COINBASE_GROUP_ID=$(LIVE_NORMALIZER_COINBASE_GROUP_ID) NORMALIZER_KRAKEN_GROUP_ID=$(LIVE_NORMALIZER_KRAKEN_GROUP_ID) DETECTOR_GROUP_ID=$(LIVE_DETECTOR_GROUP_ID) SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live SIGNAL_WRITER_START_OFFSET=latest NORMALIZER_START_OFFSET=$(LIVE_NORMALIZER_START_OFFSET) DETECTOR_START_OFFSET=$(LIVE_DETECTOR_START_OFFSET) MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) docker compose stop ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres || true
+	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) NORMALIZER_COINBASE_GROUP_ID=$(LIVE_NORMALIZER_COINBASE_GROUP_ID) NORMALIZER_KRAKEN_GROUP_ID=$(LIVE_NORMALIZER_KRAKEN_GROUP_ID) DETECTOR_GROUP_ID=$(LIVE_DETECTOR_GROUP_ID) SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live SIGNAL_WRITER_START_OFFSET=latest NORMALIZER_START_OFFSET=$(LIVE_NORMALIZER_START_OFFSET) DETECTOR_START_OFFSET=$(LIVE_DETECTOR_START_OFFSET) MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) $(COMPOSE) stop ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres || true
 
 logs-pipeline-live:
-	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) NORMALIZER_COINBASE_GROUP_ID=$(LIVE_NORMALIZER_COINBASE_GROUP_ID) NORMALIZER_KRAKEN_GROUP_ID=$(LIVE_NORMALIZER_KRAKEN_GROUP_ID) DETECTOR_GROUP_ID=$(LIVE_DETECTOR_GROUP_ID) SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live SIGNAL_WRITER_START_OFFSET=latest NORMALIZER_START_OFFSET=$(LIVE_NORMALIZER_START_OFFSET) DETECTOR_START_OFFSET=$(LIVE_DETECTOR_START_OFFSET) MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) docker compose logs -f --tail=200 ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres
+	RAW_TICKS_COINBASE_TOPIC=$(LIVE_RAW_TICKS_COINBASE_TOPIC) RAW_TICKS_KRAKEN_TOPIC=$(LIVE_RAW_TICKS_KRAKEN_TOPIC) NORMALIZED_TICKS_TOPIC=$(LIVE_NORMALIZED_TICKS_TOPIC) SIGNALS_TOPIC=$(LIVE_SIGNALS_TOPIC) NORMALIZER_COINBASE_GROUP_ID=$(LIVE_NORMALIZER_COINBASE_GROUP_ID) NORMALIZER_KRAKEN_GROUP_ID=$(LIVE_NORMALIZER_KRAKEN_GROUP_ID) DETECTOR_GROUP_ID=$(LIVE_DETECTOR_GROUP_ID) SIGNAL_WRITER_GROUP_ID=arbiter-signal-writer-live SIGNAL_WRITER_START_OFFSET=latest NORMALIZER_START_OFFSET=$(LIVE_NORMALIZER_START_OFFSET) DETECTOR_START_OFFSET=$(LIVE_DETECTOR_START_OFFSET) MAX_QUOTE_GAP_MS=$(LIVE_MAX_QUOTE_GAP_MS) $(COMPOSE) logs -f --tail=200 ingestor-coinbase-dev ingestor-kraken-dev normalizer-dev normalizer-kraken-dev detector-dev signal-writer-dev api-dev postgres
 
 compose-down-dev:
-	docker compose stop consumer-dev producer-dev || true
+	$(COMPOSE) stop consumer-dev producer-dev || true
 
 ## Run examples locally (requires Go installed locally)
 run-consumer:
