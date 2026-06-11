@@ -1,0 +1,18 @@
+aws_region  = "us-east-1"
+environment = "dev"
+
+# Copy these from `terraform -chdir=terraform/foundation output`.
+vpc_id                         = "vpc-xxxxxxxxxxxxxxxxx"
+subnet_id                      = "subnet-xxxxxxxxxxxxxxxxx"
+app_internal_security_group_id = "sg-xxxxxxxxxxxxxxxxx"
+
+# Optional: limit SSH to your current IP or VPN range.
+# admin_cidrs = ["203.0.113.10/32"]
+
+# Optional overrides.
+# kafka_port                = 9092
+# kafka_controller_port     = 9093
+# kafka_instance_type       = "t3.small"
+# kafka_root_volume_size_gb = 20
+# assign_public_ip          = true
+# key_name                  = "your-ec2-keypair"

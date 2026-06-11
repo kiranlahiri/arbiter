@@ -1,0 +1,82 @@
+#!/bin/bash
+set -euxo pipefail
+
+dnf update -y
+dnf install -y java-17-amazon-corretto-headless wget tar
+
+id -u kafka >/dev/null 2>&1 || useradd --system --home-dir /opt/kafka --shell /sbin/nologin kafka
+
+KAFKA_VERSION="${kafka_version}"
+SCALA_VERSION="${kafka_scala_version}"
+KAFKA_HOME="/opt/kafka"
+KAFKA_TGZ="kafka_${kafka_scala_version}-${kafka_version}.tgz"
+KAFKA_DIR="kafka_${kafka_scala_version}-${kafka_version}"
+KAFKA_URL="https://archive.apache.org/dist/kafka/${kafka_version}/$${KAFKA_TGZ}"
+DATA_DIR="${kafka_data_dir}"
+BROKER_PORT="${kafka_port}"
+CONTROLLER_PORT="${kafka_controller_port}"
+
+mkdir -p /opt
+if [ ! -d "$${KAFKA_HOME}" ]; then
+  cd /opt
+  wget -q "$${KAFKA_URL}"
+  tar -xzf "$${KAFKA_TGZ}"
+  mv "$${KAFKA_DIR}" kafka
+  rm -f "$${KAFKA_TGZ}"
+fi
+
+mkdir -p "$${DATA_DIR}"
+chown -R kafka:kafka /opt/kafka "$${DATA_DIR}"
+
+TOKEN="$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")"
+LOCAL_IP="$(curl -sH "X-aws-ec2-metadata-token: $${TOKEN}" http://169.254.169.254/latest/meta-data/local-ipv4)"
+
+cat > /opt/kafka/config/kraft/server.properties <<EOF
+process.roles=broker,controller
+node.id=1
+controller.quorum.voters=1@$${LOCAL_IP}:$${CONTROLLER_PORT}
+listeners=PLAINTEXT://0.0.0.0:$${BROKER_PORT},CONTROLLER://0.0.0.0:$${CONTROLLER_PORT}
+advertised.listeners=PLAINTEXT://$${LOCAL_IP}:$${BROKER_PORT}
+listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+inter.broker.listener.name=PLAINTEXT
+controller.listener.names=CONTROLLER
+log.dirs=$${DATA_DIR}
+num.partitions=3
+offsets.topic.replication.factor=1
+transaction.state.log.replication.factor=1
+transaction.state.log.min.isr=1
+auto.create.topics.enable=false
+default.replication.factor=1
+min.insync.replicas=1
+group.initial.rebalance.delay.ms=0
+EOF
+
+if [ ! -f "$${DATA_DIR}/meta.properties" ]; then
+  CLUSTER_ID="$(/opt/kafka/bin/kafka-storage.sh random-uuid)"
+  /opt/kafka/bin/kafka-storage.sh format -t "$${CLUSTER_ID}" -c /opt/kafka/config/kraft/server.properties
+fi
+
+cat > /etc/systemd/system/kafka.service <<'EOF'
+[Unit]
+Description=Apache Kafka Broker (KRaft)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kafka
+Group=kafka
+Environment="KAFKA_HEAP_OPTS=-Xms512m -Xmx512m"
+ExecStart=/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/kraft/server.properties
+ExecStop=/opt/kafka/bin/kafka-server-stop.sh
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable kafka
+systemctl restart kafka
