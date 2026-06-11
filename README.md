@@ -46,11 +46,13 @@ Current pipeline stages:
 
 ## Configuration
 
-Use [.env.example](.env.example) as the starting point for local overrides:
+Use [.env.local.example](.env.local.example) as the starting point for local overrides:
 
 ```bash
-cp .env.example .env
+cp .env.local.example .env.local
 ```
+
+The local Make targets use `.env.local` by default. Your existing `.env` can stay reserved for older deployment experiments or be removed later once we finish cleaning up the hosted path.
 
 The project has two config modes:
 
@@ -59,7 +61,7 @@ The project has two config modes:
 
 That separation is important. Fresh groups are useful for local tailing, but deployment should use stable group identities.
 
-For a VM deployment, use [.env.production.example](.env.production.example) as the starting point instead.
+For a VM or hosted deployment, use [.env.production.example](.env.production.example) as the starting point instead.
 
 ## Why Kafka
 
@@ -145,9 +147,11 @@ cmd/
   signal-consumer/   Human-readable signal stream reader
   signal-writer/     Kafka consumer that persists Signal rows to Postgres
 docs/
+  aws_migration_plan.md
   detector_debugging_notes.md
   deployment.md
   local_kafka_reference.md
+  local_runbook.md
   summary_for_codex.md
 proto/
   common.proto
@@ -173,6 +177,12 @@ Or start the full local stack:
 
 ```bash
 make up
+```
+
+If you ever want to use a different local env file, override the default:
+
+```bash
+make ENV_FILE=.env.local up
 ```
 
 ### 2. Start the long-lived pipeline
